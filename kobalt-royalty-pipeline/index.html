@@ -53,9 +53,9 @@
     var earned = Math.max(0, d.earned);
     if (!earned) { stage.innerHTML = ""; return; }
 
-    var PAD_T = 34, PAD_B = 26, colW = 15;
+    var PAD_T = 34, PAD_B = 26, colW = 13;
     var h = Math.max(40, H - PAD_T - PAD_B);
-    var x0 = 8, x1 = Math.round(W * 0.40), x2 = Math.round(W * 0.76);
+    var x0 = 6, x1 = Math.round(W * 0.34), x2 = Math.round(W * 0.64);
     var sc = function (v) { return Math.max(1, (v / earned) * h); };
 
     // Column 1 — everything Kobalt earned in the period.
