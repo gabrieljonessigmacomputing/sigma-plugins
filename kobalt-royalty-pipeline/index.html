@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Kobalt royalty pipeline</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:transparent;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  #stage{width:100%;height:100%}
+  .lbl{font-size:12px;font-weight:600;fill:#141414}
+  .amt{font-size:15px;font-weight:700;fill:#141414}
+  .sub{font-size:10.5px;fill:#6B6862}
+  .cap{font-size:10px;font-weight:700;fill:#6B6862;letter-spacing:.08em}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="https://unpkg.com/@sigmacomputing/plugin"></script>
+<script>
+(function () {
+  "use strict";
+  var VERM = "#FF3A1E", WARM = "#FF7A45", SAND = "#FFB199",
+      INK = "#141414", GREY = "#BFBCB6", TEAL = "#0E9E88";
+  var stage = document.getElementById("stage");
+
+  function money(v) {
+    v = Number(v) || 0;
+    var a = Math.abs(v);
+    if (a >= 1e9) return "$" + (v / 1e9).toFixed(2) + "B";
+    if (a >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
+    if (a >= 1e3) return "$" + (v / 1e3).toFixed(0) + "K";
+    return "$" + v.toFixed(0);
+  }
+
+  // Ribbon between two vertical spans, as a filled cubic band.
+  function ribbon(x0, y0a, y0b, x1, y1a, y1b, fill, op) {
+    var mx = (x0 + x1) / 2;
+    return '<path d="M' + x0 + ',' + y0a +
+           ' C' + mx + ',' + y0a + ' ' + mx + ',' + y1a + ' ' + x1 + ',' + y1a +
+           ' L' + x1 + ',' + y1b +
+           ' C' + mx + ',' + y1b + ' ' + mx + ',' + y0b + ' ' + x0 + ',' + y0b +
+           ' Z" fill="' + fill + '" fill-opacity="' + op + '"/>';
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function draw(d) {
+    var W = stage.clientWidth || 900, H = stage.clientHeight || 300;
+    if (W < 40 || H < 40) return;
+
+    var earned = Math.max(0, d.earned);
+    if (!earned) { stage.innerHTML = ""; return; }
+
+    var PAD_T = 34, PAD_B = 26, colW = 15;
+    var h = Math.max(40, H - PAD_T - PAD_B);
+    var x0 = 8, x1 = Math.round(W * 0.40), x2 = Math.round(W * 0.76);
+    var sc = function (v) { return Math.max(1, (v / earned) * h); };
+
+    // Column 1 — everything Kobalt earned in the period.
+    var s = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">';
+    s += '<text class="cap" x="' + x0 + '" y="14">EARNED</text>';
+    s += '<text class="cap" x="' + x1 + '" y="14">COLLECTED</text>';
+    s += '<text class="cap" x="' + x2 + '" y="14">SETTLED</text>';
+
+    var yA = PAD_T;
+    s += '<rect x="' + x0 + '" y="' + yA + '" width="' + colW + '" height="' + h + '" rx="3" fill="' + INK + '"/>';
+    s += '<text class="amt" x="' + (x0 + colW + 10) + '" y="' + (yA + 16) + '">' + money(earned) + '</text>';
+    s += '<text class="sub" x="' + (x0 + colW + 10) + '" y="' + (yA + 32) + '">net payable, all lines</text>';
+
+    // Column 2 — received vs still awaiting a statement.
+    var hRec = sc(d.received), hWait = sc(d.notReceived);
+    var yRec = PAD_T, yWait = PAD_T + hRec + 8;
+    s += ribbon(x0 + colW, yA, yA + hRec, x1, yRec, yRec + hRec, VERM, 0.32);
+    s += ribbon(x0 + colW, yA + hRec, yA + hRec + hWait, x1, yWait, yWait + hWait, GREY, 0.42);
+    s += '<rect x="' + x1 + '" y="' + yRec + '" width="' + colW + '" height="' + hRec + '" rx="3" fill="' + VERM + '"/>';
+    s += '<rect x="' + x1 + '" y="' + yWait + '" width="' + colW + '" height="' + hWait + '" rx="3" fill="' + GREY + '"/>';
+    s += '<text class="lbl" x="' + (x1 + colW + 8) + '" y="' + (yRec + 13) + '">Statement received</text>';
+    s += '<text class="sub" x="' + (x1 + colW + 8) + '" y="' + (yRec + 28) + '">' + money(d.received) + '</text>';
+    s += '<text class="lbl" x="' + (x1 + colW + 8) + '" y="' + (yWait + 13) + '">Awaiting statement</text>';
+    s += '<text class="sub" x="' + (x1 + colW + 8) + '" y="' + (yWait + 28) + '">' + money(d.notReceived) + '</text>';
+
+    // Column 3 — of what was collected, what actually reached the writer.
+    var parts = [
+      { k: "Paid to writers", v: d.paid, c: TEAL },
+      { k: "Pending payment run", v: d.pending, c: WARM },
+      { k: "Held in suspense", v: d.suspense, c: SAND }
+    ];
+    var cy = yRec, sy = yRec;
+    for (var i = 0; i < parts.length; i++) {
+      var ph = sc(parts[i].v);
+      s += ribbon(x1 + colW, sy, sy + ph, x2, cy, cy + ph, parts[i].c, 0.34);
+      s += '<rect x="' + x2 + '" y="' + cy + '" width="' + colW + '" height="' + ph + '" rx="3" fill="' + parts[i].c + '"/>';
+      s += '<text class="lbl" x="' + (x2 + colW + 8) + '" y="' + (cy + 13) + '">' + esc(parts[i].k) + '</text>';
+      s += '<text class="sub" x="' + (x2 + colW + 8) + '" y="' + (cy + 28) + '">' + money(parts[i].v) +
+           '  ·  ' + ((parts[i].v / earned) * 100).toFixed(1) + '%</text>';
+      sy += ph; cy += ph + 8;
+    }
+    s += '</svg>';
+    stage.innerHTML = s;
+  }
+
+  // Shown before an element is bound, so the plugin never looks broken in the
+  // editor. Shape matches Kobalt's real mix.
+  function synth() {
+    return { earned: 2.84e9, received: 2.66e9, notReceived: 1.77e8,
+             paid: 2.47e9, pending: 8.4e7, suspense: 1.08e8 };
+  }
+
+  var LAST = synth();
+  var client = window.sigmaComputing && window.sigmaComputing.plugin
+             ? window.sigmaComputing.plugin.client : null;
+
+  if (!client) { draw(LAST); }
+  else {
+    client.config.configureEditorPanel([
+      { name: "source", type: "element" },
+      { name: "earned", type: "column", source: "source", allowedTypes: ["number"], label: "Net payable (all)" },
+      { name: "received", type: "column", source: "source", allowedTypes: ["number"], label: "Statement received" },
+      { name: "notReceived", type: "column", source: "source", allowedTypes: ["number"], label: "Awaiting statement" },
+      { name: "paid", type: "column", source: "source", allowedTypes: ["number"], label: "Paid" },
+      { name: "pending", type: "column", source: "source", allowedTypes: ["number"], label: "Pending payment run" },
+      { name: "suspense", type: "column", source: "source", allowedTypes: ["number"], label: "In suspense" }
+    ]);
+
+    var unsub = null;
+    client.config.subscribe(function (cfg) {
+      if (unsub) { unsub(); unsub = null; }
+      if (!cfg || !cfg.source) { draw(LAST); return; }
+      unsub = client.elements.subscribeToElementData(cfg.source, function (data) {
+        function first(key) {
+          var col = cfg[key];
+          if (!col || !data || !data[col] || !data[col].length) return 0;
+          return Number(data[col][0]) || 0;
+        }
+        var d = { earned: first("earned"), received: first("received"),
+                  notReceived: first("notReceived"), paid: first("paid"),
+                  pending: first("pending"), suspense: first("suspense") };
+        LAST = d.earned ? d : synth();
+        draw(LAST);
+      });
+    });
+  }
+
+  // Resize against the stage element, not the window: the plugin lives in an
+  // iframe that is resized without a window resize event firing.
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { draw(LAST); }).observe(stage);
+  }
+  draw(LAST);
+})();
+</script>
+</body>
+</html>
