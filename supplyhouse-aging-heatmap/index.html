@@ -87,7 +87,7 @@
 
   /* ---- matrix ---- */
   .grid{flex:1 1 auto;display:grid;gap:2px;min-height:0;align-content:start}
-  .ch{display:flex;flex-direction:column;justify-content:flex-end;
+  .ch{display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;
       padding:0 2px 5px;font-size:calc(var(--base) * .82);font-weight:600;
       color:var(--sh-brown);text-align:center;border-bottom:1px solid var(--sh-rule)}
   .ch .u{font-size:calc(var(--base) * .68);font-weight:500;color:#8A807A;
@@ -350,11 +350,14 @@
     var spacerW = anyAged ? Math.max(4, Math.round(base * 0.6)) : 0;
     var cols = labW + "px repeat(" + buckets.length + ",minmax(0,1fr))" +
                (anyAged ? " " + spacerW + "px " + agedW + "px" : "");
-    // Cap row height so a very tall element doesn't stretch five rows into
-    // five billboards; the grid stays top-aligned instead.
-    var rowH = Math.max(34, Math.min(86, (h - base * 9) / (body.length + 1)));
+    // Pin both row heights. An `auto` header row gets compressed (and clips
+    // its own text) when the fixed rows leave it too little, so size it here
+    // and cap the body rows: a very tall element shouldn't stretch five rows
+    // into five billboards.
+    var hdrH = Math.ceil(base * 3.7);
+    var rowH = Math.max(30, Math.min(86, (h - base * 9.5 - hdrH) / body.length));
     html += '<div class="grid" style="grid-template-columns:' + cols +
-            ';grid-template-rows:auto repeat(' + body.length + ',' +
+            ';grid-template-rows:' + hdrH + 'px repeat(' + body.length + ',' +
             rowH.toFixed(0) + 'px)">';
 
     html += '<div class="ch rl">Distribution center<div class="u">days since receipt →</div></div>';
