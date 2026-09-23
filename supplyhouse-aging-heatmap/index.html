@@ -195,12 +195,12 @@
   // SupplyHouse-shaped sample data (4 DCs, real aging profile) so the plugin
   // looks right in the editor before anything is bound.
   function synth() {
-    var buckets = ["0-30", "31-60", "61-90", "91-180", "180+"];
+    var buckets = ["0-30", "31-60", "61-90", "91-180", "181-365", "365+"];
     var raw = [
-      ["Reno DC",           64.09e6, 75.44e6, 48.41e6, 177.63e6, 10.37e6],
-      ["Columbus DC",       31.14e6, 40.81e6, 25.38e6,   8.20e6,  0.02e6],
-      ["Cranbury DC",       24.02e6, 29.70e6, 17.29e6,  11.08e6,  0.40e6],
-      ["Farmers Branch DC", 19.22e6, 20.41e6, 15.88e6,  42.59e6,  2.36e6]
+      ["Reno DC",           4.36e6, 5.13e6, 3.05e6, 8.08e6, 1.39e6, 0.21e6],
+      ["Farmers Branch DC", 3.72e6, 3.80e6, 2.11e6, 5.04e6, 0.77e6, 0.09e6],
+      ["Columbus DC",       4.00e6, 4.05e6, 2.32e6, 3.62e6, 0.28e6, 0.03e6],
+      ["Cranbury DC",       4.70e6, 4.52e6, 1.44e6, 2.14e6, 0.23e6, 0.02e6]
     ];
     var rows = raw.map(function (r) {
       var cells = {}, total = 0;
