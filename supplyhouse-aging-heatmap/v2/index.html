@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SupplyHouse — Inventory Aging Heatmap</title>
+<!--
+  SupplyHouse.com — Inventory aging heatmap (Sigma custom plugin, element type)
+
+  Rows    = distribution centre
+  Columns = inventory aging bucket (0-30, 31-60, 61-90, 91-180, 180+, ...)
+  Cell    = that DC's inventory VALUE in that bucket, shaded by the bucket's
+            share of the DC's own on-hand value (row-normalised).
+  Right   = "Aged > 90 days" roll-up per DC, with a micro-bar.
+
+  Editor panel contract (see configureEditorPanel below):
+    LONG shape (preferred, simplest):
+      source      element
+      dc          column  (text)    - DC name, one row per DC x bucket
+      bucket      column  (text)    - bucket label, e.g. "91-180"
+      value       column  (number)  - inventory value in that bucket
+      bucketOrder column  (number, optional) - explicit column order
+    WIDE shape (fallback, used when `value` is not bound):
+      source      element
+      dc          column  (text)
+      wideValues  column  (number, allowMultiple) - one numeric column per
+                  bucket; each column's DISPLAY NAME becomes the bucket label.
+
+  No animation loop, no external fetch, no build step: Sigma's headless PNG
+  export needs the page to go idle. Resize is observed on the stage element,
+  not the window (the iframe is resized without a window resize event).
+-->
+<script src="https://unpkg.com/@sigmacomputing/plugin"></script>
+<style>
+  /* Brand palette sampled from supplyhouse.com */
+  :root{
+    --sh-brown:#331811;      /* primary dark brown */
+    --sh-tan:#B7804E;        /* secondary tan      */
+    --sh-orange:#F15C02;     /* CTA orange         */
+    --sh-blue:#07729C;       /* link blue          */
+    --sh-text:#343434;       /* body text          */
+    --sh-bg:#F8F5F3;         /* page neutral       */
+    --sh-bg2:#F0ECE8;        /* panel neutral      */
+    --sh-rule:#C8C4C0;       /* hairline rule      */
+    --sh-green:#5E9A41;      /* in stock           */
+    --sh-red:#BA1E00;        /* backorder          */
+    --sh-alert:#6E1F09;      /* deep end of ramp   */
+    --base:13px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--sh-bg);
+    color:var(--sh-text);
+    font:400 var(--base)/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",
+         "Helvetica Neue",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    /* Padding lives on <body>, never on the observed #stage: changing the
+       observed element's own box from inside draw() would feed the
+       ResizeObserver back into itself. */
+    padding:14px;
+  }
+  #stage{height:100%;width:100%;display:flex;flex-direction:column;
+         gap:calc(var(--base) * .85)}
+
+  /* ---- header ---- */
+  .hdr{display:flex;align-items:flex-start;justify-content:space-between;
+       gap:calc(var(--base) * 1.5)}
+  .ttl{font-size:calc(var(--base) * 1.34);font-weight:700;letter-spacing:-.01em;
+       color:var(--sh-brown)}
+  .sub{margin-top:3px;font-size:calc(var(--base) * .84);color:#6B625C}
+  .sub b{color:var(--sh-text);font-weight:600}
+  .pill{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:9px;
+        background:var(--sh-bg2);border:1px solid var(--sh-rule);
+        font-size:calc(var(--base) * .72);font-weight:600;color:var(--sh-tan);
+        letter-spacing:.04em;text-transform:uppercase;vertical-align:2px}
+
+  /* ---- legend ---- */
+  .lg{flex:0 0 auto;text-align:right;padding-top:2px}
+  .lgcap{font-size:calc(var(--base) * .72);color:#6B625C;letter-spacing:.03em;
+         text-transform:uppercase;margin-bottom:5px}
+  .lgbar{height:9px;width:min(230px,26vw);border:1px solid var(--sh-rule);
+         border-radius:2px}
+  .lgax{display:flex;justify-content:space-between;
+        font-size:calc(var(--base) * .72);color:#6B625C;margin-top:3px;
+        font-variant-numeric:tabular-nums}
+
+  /* ---- matrix ---- */
+  .grid{flex:1 1 auto;display:grid;gap:2px;min-height:0}
+  .ch{display:flex;flex-direction:column;justify-content:flex-end;
+      padding:0 2px 5px;font-size:calc(var(--base) * .82);font-weight:600;
+      color:var(--sh-brown);text-align:center;border-bottom:1px solid var(--sh-rule)}
+  .ch .u{font-size:calc(var(--base) * .68);font-weight:500;color:#8A807A;
+         letter-spacing:.04em;text-transform:uppercase;margin-top:1px}
+  .ch.rl{text-align:left;padding-left:1px}
+  .ch.ag{text-align:right;padding-right:calc(var(--base) * .5);color:var(--sh-alert)}
+
+  .rl{display:flex;flex-direction:column;justify-content:center;
+      padding:0 calc(var(--base) * .6) 0 1px;overflow:hidden}
+  .rl .n{font-size:calc(var(--base) * .94);font-weight:600;color:var(--sh-brown);
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rl .m{font-size:calc(var(--base) * .74);color:#8A807A;margin-top:1px;
+         font-variant-numeric:tabular-nums}
+
+  .cell{display:flex;flex-direction:column;align-items:center;
+        justify-content:center;border-radius:2px;overflow:hidden;
+        font-variant-numeric:tabular-nums}
+  .cell .v{font-size:calc(var(--base) * .94);font-weight:600;line-height:1.15}
+  .cell .p{font-size:calc(var(--base) * .76);opacity:.78;margin-top:1px}
+
+  .spacer{}
+  .ag{display:flex;flex-direction:column;align-items:flex-end;
+      justify-content:center;padding:0 calc(var(--base) * .5);
+      border-left:2px solid var(--sh-rule);font-variant-numeric:tabular-nums}
+  .ag .v{font-size:calc(var(--base) * .96);font-weight:700;color:var(--sh-alert)}
+  .ag .p{font-size:calc(var(--base) * .76);color:#6B625C;margin-top:1px}
+  .ag .bar{margin-top:4px;height:4px;width:100%;background:var(--sh-bg2);
+           border-radius:2px;overflow:hidden}
+  .ag .bar i{display:block;height:100%;background:var(--sh-alert);border-radius:2px}
+
+  .tot .n,.tot .v{color:var(--sh-brown)}
+  .tot{border-top:2px solid var(--sh-brown) !important}
+
+  .foot{flex:0 0 auto;display:flex;justify-content:space-between;gap:12px;
+        font-size:calc(var(--base) * .74);color:#8A807A;
+        border-top:1px solid var(--sh-rule);padding-top:calc(var(--base) * .5)}
+  .foot b{color:var(--sh-alert);font-weight:600}
+  .empty{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+         color:#8A807A;font-size:calc(var(--base) * .95)}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+(function () {
+  "use strict";
+
+  var stage = document.getElementById("stage");
+
+  /* ------------------------------------------------------------------ color */
+  // Sequential ramp: light neutral -> brand tan -> deep alert. Old inventory
+  // reads hot without leaving the SupplyHouse palette.
+  var RAMP = [
+    [0.00, [248,245,243]],  // #F8F5F3
+    [0.18, [242,230,217]],
+    [0.36, [230,207,180]],
+    [0.54, [214,177,131]],
+    [0.72, [183,128, 78]],  // #B7804E brand tan
+    [0.87, [154, 78, 34]],
+    [1.00, [110, 31,  9]]   // #6E1F09 deep alert
+  ];
+  function ramp(t) {
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    for (var i = 1; i < RAMP.length; i++) {
+      if (t <= RAMP[i][0]) {
+        var a = RAMP[i - 1], b = RAMP[i];
+        var f = (t - a[0]) / (b[0] - a[0] || 1);
+        return "rgb(" + Math.round(a[1][0] + (b[1][0] - a[1][0]) * f) + "," +
+                        Math.round(a[1][1] + (b[1][1] - a[1][1]) * f) + "," +
+                        Math.round(a[1][2] + (b[1][2] - a[1][2]) * f) + ")";
+      }
+    }
+    return "rgb(110,31,9)";
+  }
+  function rampCss() {
+    var s = [];
+    for (var i = 0; i < RAMP.length; i++) {
+      s.push(ramp(RAMP[i][0]) + " " + Math.round(RAMP[i][0] * 100) + "%");
+    }
+    return "linear-gradient(90deg," + s.join(",") + ")";
+  }
+  function ink(t) { return t > 0.55 ? "#FDF7F2" : "#343434"; }
+
+  /* ----------------------------------------------------------------- format */
+  function money(v) {
+    var a = Math.abs(v);
+    if (a >= 1e9) return "$" + (v / 1e9).toFixed(2) + "B";
+    if (a >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
+    if (a >= 1e3) return "$" + Math.round(v / 1e3) + "K";
+    return "$" + Math.round(v);
+  }
+  function pct(x) { return (x * 100).toFixed(x < 0.1 ? 1 : 0) + "%"; }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+  // Lower bound of an aging bucket label: "91-180" -> 91, "180+" -> 180.
+  function lower(label) {
+    var m = String(label).match(/-?\d+/);
+    return m ? Number(m[0]) : 0;
+  }
+
+  /* ------------------------------------------------------------------ synth */
+  // SupplyHouse-shaped sample data (4 DCs, real aging profile) so the plugin
+  // looks right in the editor before anything is bound.
+  function synth() {
+    var buckets = ["0-30", "31-60", "61-90", "91-180", "181-365", "365+"];
+    var raw = [
+      ["Reno DC",           4.36e6, 5.13e6, 3.05e6, 8.08e6, 1.39e6, 0.21e6],
+      ["Farmers Branch DC", 3.72e6, 3.80e6, 2.11e6, 5.04e6, 0.77e6, 0.09e6],
+      ["Columbus DC",       4.00e6, 4.05e6, 2.32e6, 3.62e6, 0.28e6, 0.03e6],
+      ["Cranbury DC",       4.70e6, 4.52e6, 1.44e6, 2.14e6, 0.23e6, 0.02e6]
+    ];
+    var rows = raw.map(function (r) {
+      var cells = {}, total = 0;
+      for (var i = 0; i < buckets.length; i++) { cells[buckets[i]] = r[i + 1]; total += r[i + 1]; }
+      return { dc: r[0], cells: cells, total: total };
+    });
+    return { buckets: buckets, rows: rows, sample: true };
+  }
+
+  /* ------------------------------------------------------------------ shape */
+  // The key a column arrives under in the data payload is normally the column
+  // id from the config, but don't assume it: fall back to a prefix match on
+  // the id and then to the column's display name.
+  function key(data, cols, want) {
+    if (!want || !data) return null;
+    if (Object.prototype.hasOwnProperty.call(data, want)) return want;
+    var ks = Object.keys(data), i;
+    for (i = 0; i < ks.length; i++) if (ks[i].indexOf(want) === 0) return ks[i];
+    for (i = 0; i < ks.length; i++) if (String(want).indexOf(ks[i]) === 0) return ks[i];
+    if (cols) for (i = 0; i < ks.length; i++) {
+      var meta = cols[ks[i]];
+      if (meta && (meta.name === want || meta.id === want)) return ks[i];
+    }
+    return null;
+  }
+
+  // Long shape: dc / bucket / value (+ optional bucketOrder).
+  function fromLong(data, cols, cfg) {
+    var kDc = key(data, cols, cfg.dc), kBk = key(data, cols, cfg.bucket),
+        kVal = key(data, cols, cfg.value), kOrd = key(data, cols, cfg.bucketOrder);
+    cfg = { dc: kDc, bucket: kBk, value: kVal, bucketOrder: kOrd };
+    var dcs = data[cfg.dc], bks = data[cfg.bucket], vals = data[cfg.value];
+    if (!dcs || !bks || !vals || !dcs.length) return null;
+    var ords = cfg.bucketOrder ? data[cfg.bucketOrder] : null;
+    var order = {}, byDc = {}, seen = [];
+    for (var i = 0; i < dcs.length; i++) {
+      var d = dcs[i] == null ? "—" : String(dcs[i]);
+      var b = bks[i] == null ? "—" : String(bks[i]);
+      var v = Number(vals[i]); if (!isFinite(v)) v = 0;
+      if (!(b in order)) { seen.push(b); order[b] = ords ? Number(ords[i]) : lower(b); }
+      if (!byDc[d]) byDc[d] = { dc: d, cells: {}, total: 0 };
+      byDc[d].cells[b] = (byDc[d].cells[b] || 0) + v;
+      byDc[d].total += v;
+    }
+    seen.sort(function (a, b) {
+      var oa = order[a], ob = order[b];
+      if (!isFinite(oa)) oa = lower(a);
+      if (!isFinite(ob)) ob = lower(b);
+      return oa - ob;
+    });
+    var rows = Object.keys(byDc).map(function (k) { return byDc[k]; });
+    return rows.length ? { buckets: seen, rows: rows } : null;
+  }
+
+  // Wide shape: one numeric column per bucket; column display name = label.
+  function fromWide(data, cols, cfg) {
+    var picks = cfg.wideValues;
+    picks = Array.isArray(picks) ? picks : (picks ? [picks] : []);
+    picks = picks.map(function (p) { return key(data, cols, p) || p; });
+    var dcs = data[key(data, cols, cfg.dc)];
+    if (!picks.length || !dcs || !dcs.length) return null;
+    var labels = picks.map(function (id) {
+      return (cols && cols[id] && cols[id].name) ? cols[id].name : id;
+    });
+    var byDc = {};
+    for (var i = 0; i < dcs.length; i++) {
+      var d = dcs[i] == null ? "—" : String(dcs[i]);
+      if (!byDc[d]) byDc[d] = { dc: d, cells: {}, total: 0 };
+      for (var j = 0; j < picks.length; j++) {
+        var v = Number((data[picks[j]] || [])[i]); if (!isFinite(v)) v = 0;
+        byDc[d].cells[labels[j]] = (byDc[d].cells[labels[j]] || 0) + v;
+        byDc[d].total += v;
+      }
+    }
+    var rows = Object.keys(byDc).map(function (k) { return byDc[k]; });
+    return rows.length ? { buckets: labels, rows: rows } : null;
+  }
+
+  /* ------------------------------------------------------------------ draw */
+  var OPTS = { title: "", subtitle: "", agedFrom: 90, sort: "aged" };
+
+  function draw(model) {
+    if (!model || !model.rows || !model.rows.length || !model.buckets.length) {
+      stage.innerHTML = '<div class="empty">Bind a source element with DC, aging bucket and inventory value columns.</div>';
+      return;
+    }
+    // Type scale follows the stage, not the window.
+    var w = stage.clientWidth || 900, h = stage.clientHeight || 420;
+    var base = Math.max(10.5, Math.min(16, Math.min(w / 62, h / 30)));
+    stage.style.setProperty("--base", base.toFixed(2) + "px");
+
+    var buckets = model.buckets, rows = model.rows.slice();
+    var agedFrom = OPTS.agedFrom;
+    var isAged = {}, anyAged = false;
+    buckets.forEach(function (b) { isAged[b] = lower(b) >= agedFrom; if (isAged[b]) anyAged = true; });
+
+    // Row metrics + matrix-wide scale max (row-normalised shares).
+    var maxShare = 0, gTotal = 0, gAged = 0, gCells = {};
+    rows.forEach(function (r) {
+      r.aged = 0;
+      buckets.forEach(function (b) {
+        var v = r.cells[b] || 0;
+        gCells[b] = (gCells[b] || 0) + v;
+        if (isAged[b]) r.aged += v;
+        if (r.total > 0) maxShare = Math.max(maxShare, v / r.total);
+      });
+      r.agedShare = r.total > 0 ? r.aged / r.total : 0;
+      gTotal += r.total; gAged += r.aged;
+    });
+    if (maxShare <= 0) maxShare = 1;
+    var maxAged = rows.reduce(function (m, r) { return Math.max(m, r.agedShare); }, 0) || 1;
+
+    if (OPTS.sort === "name")       rows.sort(function (a, b) { return a.dc.localeCompare(b.dc); });
+    else if (OPTS.sort === "value") rows.sort(function (a, b) { return b.total - a.total; });
+    else                            rows.sort(function (a, b) { return b.agedShare - a.agedShare; });
+
+    var totalRow = { dc: "All DCs", cells: gCells, total: gTotal, aged: gAged,
+                     agedShare: gTotal > 0 ? gAged / gTotal : 0, isTotal: true };
+    var body = rows.concat([totalRow]);
+
+    /* header */
+    var title = OPTS.title || "Inventory aging by distribution center";
+    var sub = OPTS.subtitle ||
+      ("Share of on-hand inventory value by days since receipt · <b>" +
+       money(gTotal) + "</b> on hand across " + rows.length + " DCs");
+    var html =
+      '<div class="hdr">' +
+        '<div><div class="ttl">' + esc(title) +
+          (model.sample ? '<span class="pill">sample data</span>' : '') +
+        '</div><div class="sub">' + sub + '</div></div>' +
+        '<div class="lg"><div class="lgcap">Share of DC inventory value</div>' +
+          '<div class="lgbar" style="background:' + rampCss() + '"></div>' +
+          '<div class="lgax"><span>0%</span><span>' + pct(maxShare) + '</span></div>' +
+        '</div>' +
+      '</div>';
+
+    /* matrix */
+    var cols = "minmax(96px,1.45fr) repeat(" + buckets.length + ",minmax(58px,1fr))" +
+               (anyAged ? " calc(var(--base) * .6) minmax(96px,1.15fr)" : "");
+    html += '<div class="grid" style="grid-template-columns:' + cols +
+            ';grid-template-rows:auto repeat(' + body.length + ',minmax(0,1fr))">';
+
+    html += '<div class="ch rl">Distribution center<div class="u">days since receipt →</div></div>';
+    buckets.forEach(function (b) {
+      html += '<div class="ch">' + esc(b) + '</div>';
+    });
+    if (anyAged) {
+      html += '<div class="spacer"></div>' +
+              '<div class="ch ag">Aged &gt; ' + agedFrom + ' days<div class="u">at risk</div></div>';
+    }
+
+    body.forEach(function (r) {
+      var tc = r.isTotal ? " tot" : "";
+      html += '<div class="rl' + tc + '"><div class="n">' + esc(r.dc) +
+              '</div><div class="m">' + money(r.total) + ' on hand</div></div>';
+      buckets.forEach(function (b) {
+        var v = r.cells[b] || 0;
+        var share = r.total > 0 ? v / r.total : 0;
+        var t = share / maxShare;
+        html += '<div class="cell' + tc + '" style="background:' + ramp(t) + ';color:' + ink(t) +
+                '" title="' + esc(r.dc + " — " + b + " days: " + money(v) + " (" + pct(share) + " of DC)") + '">' +
+                  '<div class="v">' + money(v) + '</div>' +
+                  '<div class="p">' + pct(share) + '</div>' +
+                '</div>';
+      });
+      if (anyAged) {
+        html += '<div class="spacer"></div>' +
+                '<div class="ag' + tc + '">' +
+                  '<div class="v">' + money(r.aged) + '</div>' +
+                  '<div class="p">' + pct(r.agedShare) + ' of DC value</div>' +
+                  '<div class="bar"><i style="width:' +
+                    Math.max(2, Math.round((r.agedShare / maxAged) * 100)) + '%"></i></div>' +
+                '</div>';
+      }
+    });
+    html += '</div>';
+
+    /* footer */
+    var worst = rows.reduce(function (a, b) { return b.agedShare > a.agedShare ? b : a; }, rows[0]);
+    html += '<div class="foot"><span>Cell shading: bucket share of that DC’s on-hand value.</span>' +
+            '<span><b>' + esc(worst.dc) + '</b> carries ' + pct(worst.agedShare) + ' (' +
+            money(worst.aged) + ') past ' + agedFrom + ' days</span></div>';
+
+    stage.innerHTML = html;
+  }
+
+  /* ------------------------------------------------------------------ wire */
+  var LAST = synth();
+  var client = (window.sigmaComputing && window.sigmaComputing.plugin)
+             ? window.sigmaComputing.plugin.client : null;
+
+  if (client) {
+    client.config.configureEditorPanel([
+      { name: "source", type: "element" },
+      { name: "dc", type: "column", source: "source", allowedTypes: ["text"],
+        label: "Distribution center (rows)" },
+      { name: "bucket", type: "column", source: "source", allowedTypes: ["text"],
+        label: "Aging bucket (columns)" },
+      { name: "value", type: "column", source: "source", allowedTypes: ["number", "integer"],
+        label: "Inventory value" },
+      { name: "bucketOrder", type: "column", source: "source", allowedTypes: ["number", "integer"],
+        label: "Bucket sort order (optional)" },
+      { name: "wideValues", type: "column", source: "source", allowMultiple: true,
+        allowedTypes: ["number", "integer"],
+        label: "Wide shape: one column per bucket (optional)" },
+      { name: "title", type: "text", label: "Title",
+        defaultValue: "Inventory aging by distribution center" },
+      { name: "subtitle", type: "text", label: "Subtitle (optional)" },
+      { name: "agedFrom", type: "text", label: "Aged-from threshold (days)", defaultValue: "90" },
+      { name: "sort", type: "dropdown", source: "source", values: ["aged", "value", "name"],
+        label: "Sort rows by" },
+      { name: "debug", type: "toggle", label: "Show binding diagnostics" }
+    ]);
+
+    var unsubData = null, unsubCols = null, COLS = null, CFG = null;
+
+    function rebuild(data) {
+      if (!CFG) { draw(LAST); return; }
+      if (CFG.debug) { debugDump(data); return; }
+      var m = null;
+      if (CFG.value && CFG.dc && CFG.bucket) m = fromLong(data, COLS, CFG);
+      if (!m && CFG.dc)                      m = fromWide(data, COLS, CFG);
+      LAST = m || synth();
+      draw(LAST);
+    }
+
+    // Renders what Sigma actually handed over. The only practical way to
+    // inspect a plugin's inputs headlessly: switch it on, export the page to
+    // PNG, read the picture.
+    function debugDump(data) {
+      var rows = Object.keys(data || {}).map(function (k) {
+        var v = data[k] || [];
+        return k + "  n=" + v.length + "  [" + v.slice(0, 3).join(", ") + "]" +
+               (COLS && COLS[k] ? "  name=" + COLS[k].name + " type=" + COLS[k].columnType : "");
+      });
+      stage.innerHTML = '<pre style="font:11px/1.45 ui-monospace,Menlo,monospace;' +
+        'white-space:pre-wrap;color:#343434">' +
+        esc("callbacks: config=" + DBG.cfgCalls + " columns=" + DBG.colCalls +
+            " data=" + DBG.dataCalls +
+            "\nconfig: " + JSON.stringify(CFG) +
+            "\ncolumns: " + JSON.stringify(COLS) +
+            "\n\ndata keys:\n" + (rows.length ? rows.join("\n") : "(none)")) + "</pre>";
+    }
+
+    var DBG = { cfgCalls: 0, dataCalls: 0, colCalls: 0, lastData: null };
+
+    client.config.subscribe(function (cfg) {
+      CFG = cfg || {};
+      DBG.cfgCalls++;
+      OPTS.title = CFG.title || "";
+      OPTS.subtitle = CFG.subtitle || "";
+      var af = Number(CFG.agedFrom);
+      OPTS.agedFrom = isFinite(af) && af > 0 ? af : 90;
+      OPTS.sort = CFG.sort || "aged";
+
+      if (unsubData) { unsubData(); unsubData = null; }
+      if (unsubCols) { unsubCols(); unsubCols = null; }
+      if (!CFG.source) {
+        if (CFG.debug) { debugDump(null); return; }
+        LAST = synth(); draw(LAST); return;
+      }
+      if (CFG.debug) debugDump(DBG.lastData);
+
+      unsubCols = client.elements.subscribeToElementColumns(CFG.source, function (columns) {
+        COLS = columns; DBG.colCalls++;
+        if (CFG && CFG.debug) debugDump(DBG.lastData);
+      });
+      unsubData = client.elements.subscribeToElementData(CFG.source, function (data) {
+        DBG.dataCalls++; DBG.lastData = data || {};
+        rebuild(data || {});
+      });
+    });
+  }
+
+  // Resize against the stage element: the iframe is resized without a window
+  // resize event ever firing. Redraw ONLY on a real size change, so a redraw
+  // can never feed the observer back into itself (that loop would keep the
+  // page busy and hang Sigma's headless PNG export).
+  if (window.ResizeObserver) {
+    var lastW = 0, lastH = 0;
+    new ResizeObserver(function () {
+      var w = stage.clientWidth, h = stage.clientHeight;
+      if (w === lastW && h === lastH) return;
+      lastW = w; lastH = h;
+      draw(LAST);
+    }).observe(stage);
+  }
+  draw(LAST);
+})();
+</script>
+</body>
+</html>
