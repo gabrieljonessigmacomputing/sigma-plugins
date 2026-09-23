@@ -61,7 +61,7 @@
     padding:14px;
   }
   #stage{height:100%;width:100%;display:flex;flex-direction:column;
-         gap:calc(var(--base) * .85)}
+         gap:calc(var(--base) * .85);overflow:hidden}
 
   /* ---- header ---- */
   .hdr{display:flex;align-items:flex-start;justify-content:space-between;
@@ -86,7 +86,7 @@
         font-variant-numeric:tabular-nums}
 
   /* ---- matrix ---- */
-  .grid{flex:1 1 auto;display:grid;gap:2px;min-height:0}
+  .grid{flex:1 1 auto;display:grid;gap:2px;min-height:0;align-content:start}
   .ch{display:flex;flex-direction:column;justify-content:flex-end;
       padding:0 2px 5px;font-size:calc(var(--base) * .82);font-weight:600;
       color:var(--sh-brown);text-align:center;border-bottom:1px solid var(--sh-rule)}
@@ -110,8 +110,9 @@
 
   .spacer{}
   .ag{display:flex;flex-direction:column;align-items:flex-end;
-      justify-content:center;padding:0 calc(var(--base) * .5);
+      justify-content:center;padding:0 calc(var(--base) * .5);overflow:hidden;
       border-left:2px solid var(--sh-rule);font-variant-numeric:tabular-nums}
+  .ag .v,.ag .p{white-space:nowrap}
   .ag .v{font-size:calc(var(--base) * .96);font-weight:700;color:var(--sh-alert)}
   .ag .p{font-size:calc(var(--base) * .76);color:#6B625C;margin-top:1px}
   .ag .bar{margin-top:4px;height:4px;width:100%;background:var(--sh-bg2);
@@ -338,10 +339,23 @@
       '</div>';
 
     /* matrix */
-    var cols = "minmax(96px,1.45fr) repeat(" + buckets.length + ",minmax(58px,1fr))" +
-               (anyAged ? " calc(var(--base) * .6) minmax(96px,1.15fr)" : "");
+    // Below this width the aged column can't hold "43% of DC value" as well
+    // as the dollar figure, so it drops the caption instead of clipping it.
+    var roomy = w >= 660;
+    // Label and aged columns get a share of the real width; the buckets take
+    // whatever is left with a 0 minimum, so the matrix can never overflow the
+    // element no matter how narrow Sigma makes it.
+    var labW = Math.max(70, Math.min(190, Math.round(w * 0.19)));
+    var agedW = anyAged ? Math.max(70, Math.min(150, Math.round(w * 0.15))) : 0;
+    var spacerW = anyAged ? Math.max(4, Math.round(base * 0.6)) : 0;
+    var cols = labW + "px repeat(" + buckets.length + ",minmax(0,1fr))" +
+               (anyAged ? " " + spacerW + "px " + agedW + "px" : "");
+    // Cap row height so a very tall element doesn't stretch five rows into
+    // five billboards; the grid stays top-aligned instead.
+    var rowH = Math.max(34, Math.min(86, (h - base * 9) / (body.length + 1)));
     html += '<div class="grid" style="grid-template-columns:' + cols +
-            ';grid-template-rows:auto repeat(' + body.length + ',minmax(0,1fr))">';
+            ';grid-template-rows:auto repeat(' + body.length + ',' +
+            rowH.toFixed(0) + 'px)">';
 
     html += '<div class="ch rl">Distribution center<div class="u">days since receipt →</div></div>';
     buckets.forEach(function (b) {
@@ -370,7 +384,7 @@
         html += '<div class="spacer"></div>' +
                 '<div class="ag' + tc + '">' +
                   '<div class="v">' + money(r.aged) + '</div>' +
-                  '<div class="p">' + pct(r.agedShare) + ' of DC value</div>' +
+                  '<div class="p">' + pct(r.agedShare) + (roomy ? " of DC value" : "") + '</div>' +
                   '<div class="bar"><i style="width:' +
                     Math.max(2, Math.round((r.agedShare / maxAged) * 100)) + '%"></i></div>' +
                 '</div>';
