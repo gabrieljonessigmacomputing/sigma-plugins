@@ -438,11 +438,18 @@
       });
       stage.innerHTML = '<pre style="font:11px/1.45 ui-monospace,Menlo,monospace;' +
         'white-space:pre-wrap;color:#343434">' +
-        esc("config: " + JSON.stringify(CFG) + "\n\ndata keys:\n" + rows.join("\n")) + "</pre>";
+        esc("callbacks: config=" + DBG.cfgCalls + " columns=" + DBG.colCalls +
+            " data=" + DBG.dataCalls +
+            "\nconfig: " + JSON.stringify(CFG) +
+            "\ncolumns: " + JSON.stringify(COLS) +
+            "\n\ndata keys:\n" + (rows.length ? rows.join("\n") : "(none)")) + "</pre>";
     }
+
+    var DBG = { cfgCalls: 0, dataCalls: 0, colCalls: 0, lastData: null };
 
     client.config.subscribe(function (cfg) {
       CFG = cfg || {};
+      DBG.cfgCalls++;
       OPTS.title = CFG.title || "";
       OPTS.subtitle = CFG.subtitle || "";
       var af = Number(CFG.agedFrom);
@@ -451,12 +458,18 @@
 
       if (unsubData) { unsubData(); unsubData = null; }
       if (unsubCols) { unsubCols(); unsubCols = null; }
-      if (!CFG.source) { LAST = synth(); draw(LAST); return; }
+      if (!CFG.source) {
+        if (CFG.debug) { debugDump(null); return; }
+        LAST = synth(); draw(LAST); return;
+      }
+      if (CFG.debug) debugDump(DBG.lastData);
 
       unsubCols = client.elements.subscribeToElementColumns(CFG.source, function (columns) {
-        COLS = columns;
+        COLS = columns; DBG.colCalls++;
+        if (CFG && CFG.debug) debugDump(DBG.lastData);
       });
       unsubData = client.elements.subscribeToElementData(CFG.source, function (data) {
+        DBG.dataCalls++; DBG.lastData = data || {};
         rebuild(data || {});
       });
     });
