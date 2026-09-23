@@ -55,9 +55,13 @@
     font:400 var(--base)/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",
          "Helvetica Neue",Helvetica,Arial,sans-serif;
     -webkit-font-smoothing:antialiased;
+    /* Padding lives on <body>, never on the observed #stage: changing the
+       observed element's own box from inside draw() would feed the
+       ResizeObserver back into itself. */
+    padding:14px;
   }
   #stage{height:100%;width:100%;display:flex;flex-direction:column;
-         padding:calc(var(--base) * 1.15);gap:calc(var(--base) * .85)}
+         gap:calc(var(--base) * .85)}
 
   /* ---- header ---- */
   .hdr{display:flex;align-items:flex-start;justify-content:space-between;
@@ -423,9 +427,17 @@
   }
 
   // Resize against the stage element: the iframe is resized without a window
-  // resize event ever firing.
+  // resize event ever firing. Redraw ONLY on a real size change, so a redraw
+  // can never feed the observer back into itself (that loop would keep the
+  // page busy and hang Sigma's headless PNG export).
   if (window.ResizeObserver) {
-    new ResizeObserver(function () { draw(LAST); }).observe(stage);
+    var lastW = 0, lastH = 0;
+    new ResizeObserver(function () {
+      var w = stage.clientWidth, h = stage.clientHeight;
+      if (w === lastW && h === lastH) return;
+      lastW = w; lastH = h;
+      draw(LAST);
+    }).observe(stage);
   }
   draw(LAST);
 })();
