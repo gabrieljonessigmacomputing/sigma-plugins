@@ -211,8 +211,27 @@
   }
 
   /* ------------------------------------------------------------------ shape */
+  // The key a column arrives under in the data payload is normally the column
+  // id from the config, but don't assume it: fall back to a prefix match on
+  // the id and then to the column's display name.
+  function key(data, cols, want) {
+    if (!want || !data) return null;
+    if (Object.prototype.hasOwnProperty.call(data, want)) return want;
+    var ks = Object.keys(data), i;
+    for (i = 0; i < ks.length; i++) if (ks[i].indexOf(want) === 0) return ks[i];
+    for (i = 0; i < ks.length; i++) if (String(want).indexOf(ks[i]) === 0) return ks[i];
+    if (cols) for (i = 0; i < ks.length; i++) {
+      var meta = cols[ks[i]];
+      if (meta && (meta.name === want || meta.id === want)) return ks[i];
+    }
+    return null;
+  }
+
   // Long shape: dc / bucket / value (+ optional bucketOrder).
-  function fromLong(data, cfg) {
+  function fromLong(data, cols, cfg) {
+    var kDc = key(data, cols, cfg.dc), kBk = key(data, cols, cfg.bucket),
+        kVal = key(data, cols, cfg.value), kOrd = key(data, cols, cfg.bucketOrder);
+    cfg = { dc: kDc, bucket: kBk, value: kVal, bucketOrder: kOrd };
     var dcs = data[cfg.dc], bks = data[cfg.bucket], vals = data[cfg.value];
     if (!dcs || !bks || !vals || !dcs.length) return null;
     var ords = cfg.bucketOrder ? data[cfg.bucketOrder] : null;
@@ -240,7 +259,8 @@
   function fromWide(data, cols, cfg) {
     var picks = cfg.wideValues;
     picks = Array.isArray(picks) ? picks : (picks ? [picks] : []);
-    var dcs = data[cfg.dc];
+    picks = picks.map(function (p) { return key(data, cols, p) || p; });
+    var dcs = data[key(data, cols, cfg.dc)];
     if (!picks.length || !dcs || !dcs.length) return null;
     var labels = picks.map(function (id) {
       return (cols && cols[id] && cols[id].name) ? cols[id].name : id;
@@ -391,18 +411,34 @@
       { name: "subtitle", type: "text", label: "Subtitle (optional)" },
       { name: "agedFrom", type: "text", label: "Aged-from threshold (days)", defaultValue: "90" },
       { name: "sort", type: "dropdown", source: "source", values: ["aged", "value", "name"],
-        label: "Sort rows by" }
+        label: "Sort rows by" },
+      { name: "debug", type: "toggle", label: "Show binding diagnostics" }
     ]);
 
     var unsubData = null, unsubCols = null, COLS = null, CFG = null;
 
     function rebuild(data) {
       if (!CFG) { draw(LAST); return; }
+      if (CFG.debug) { debugDump(data); return; }
       var m = null;
-      if (CFG.value && CFG.dc && CFG.bucket) m = fromLong(data, CFG);
+      if (CFG.value && CFG.dc && CFG.bucket) m = fromLong(data, COLS, CFG);
       if (!m && CFG.dc)                      m = fromWide(data, COLS, CFG);
       LAST = m || synth();
       draw(LAST);
+    }
+
+    // Renders what Sigma actually handed over. The only practical way to
+    // inspect a plugin's inputs headlessly: switch it on, export the page to
+    // PNG, read the picture.
+    function debugDump(data) {
+      var rows = Object.keys(data || {}).map(function (k) {
+        var v = data[k] || [];
+        return k + "  n=" + v.length + "  [" + v.slice(0, 3).join(", ") + "]" +
+               (COLS && COLS[k] ? "  name=" + COLS[k].name + " type=" + COLS[k].columnType : "");
+      });
+      stage.innerHTML = '<pre style="font:11px/1.45 ui-monospace,Menlo,monospace;' +
+        'white-space:pre-wrap;color:#343434">' +
+        esc("config: " + JSON.stringify(CFG) + "\n\ndata keys:\n" + rows.join("\n")) + "</pre>";
     }
 
     client.config.subscribe(function (cfg) {
