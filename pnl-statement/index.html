@@ -106,7 +106,7 @@
 </div>
 <script>
 (function () {
-  /* pnl-stmt v5 — SDK 1.x UMD exports window.SigmaPlugin */
+  /* pnl-stmt v6 — SDK 1.x UMD exports window.SigmaPlugin */
   var client = (window.SigmaPlugin && window.SigmaPlugin.client)
     || (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
     || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
@@ -410,8 +410,10 @@
     });
   }
 
+  var T0 = Date.now();
   function paintWire(){
     var w = document.getElementById('wire'); if (!w) return;
+    if (Date.now() - T0 < 10000) { w.textContent = ''; return; }  // diagnostics only if stuck
     w.textContent = 'cfg: ' + (function(){ try { return JSON.stringify(state.cfg).slice(0, 400); } catch (e) { return '?'; } })() +
       '\n' + (window.__wire || []).slice(-40).join('\n');
   }
@@ -486,6 +488,11 @@
       showWaiting(cfg, 'Loading statement from workbook…');
     }
     try {
+      // Tell Sigma we're loading (same as the body map) so it waits for our
+      // data feed — including the headless export renderer. Safety release.
+      try { client.config.setLoadingState(true); } catch (e) {}
+      clearTimeout(state.loadTimer);
+      state.loadTimer = setTimeout(function(){ try { client.config.setLoadingState(false); } catch (e) {} }, 30000);
       var ids = [sid];
       if (raw && raw !== sid) ids.push(raw);
       function onCols(cols){
