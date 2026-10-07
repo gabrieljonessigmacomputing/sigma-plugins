@@ -239,19 +239,47 @@
     var sections = sk ? (data[sk] || []) : null;
     var kinds = rk ? (data[rk] || []) : null;
     var n = Math.max(labels.length, priors.length, currents.length);
-    var rows = [];
+    // Aggregate Product×State grain → one row per statement line
+    var byLine = {};
+    var maxAbs = 0;
     for (var i = 0; i < n; i++){
       var line = labels[i];
       if (line == null || line === '') continue;
-      rows.push({
-        line: String(line),
-        prior: asNum(priors[i]),
-        current: asNum(currents[i]),
-        order: orders ? (asNum(orders[i]) == null ? i+1 : asNum(orders[i])) : i+1,
-        section: sections && sections[i] != null ? String(sections[i]) : null,
-        kind: kinds && kinds[i] != null ? String(kinds[i]) : null
-      });
+      var key = String(line);
+      var prior = asNum(priors[i]);
+      var curr = asNum(currents[i]);
+      if (prior != null) maxAbs = Math.max(maxAbs, Math.abs(prior));
+      if (curr != null) maxAbs = Math.max(maxAbs, Math.abs(curr));
+      if (!byLine[key]){
+        byLine[key] = {
+          line: key,
+          prior: 0, current: 0, priorN: 0, currN: 0,
+          order: orders ? (asNum(orders[i]) == null ? i+1 : asNum(orders[i])) : i+1,
+          section: sections && sections[i] != null ? String(sections[i]) : null,
+          kind: kinds && kinds[i] != null ? String(kinds[i]) : null
+        };
+      }
+      var agg = byLine[key];
+      if (prior != null) { agg.prior += prior; agg.priorN++; }
+      if (curr != null) { agg.current += curr; agg.currN++; }
+      if (orders) {
+        var ord = asNum(orders[i]);
+        if (ord != null && ord < agg.order) agg.order = ord;
+      }
     }
+    // SQL $MM grains are ~tens/hundreds; dollarize for SI ($109M not $109)
+    var scale = (maxAbs > 0 && maxAbs < 10000) ? 1000000 : 1;
+    var rows = Object.keys(byLine).map(function(k){
+      var r = byLine[k];
+      return {
+        line: r.line,
+        prior: r.priorN ? r.prior * scale : null,
+        current: r.currN ? r.current * scale : null,
+        order: r.order,
+        section: r.section,
+        kind: r.kind
+      };
+    });
     rows.sort(function(a,b){ return a.order - b.order; });
     return rows;
   }
@@ -273,16 +301,20 @@
 
   function selectLine(line){
     state.selected = line;
-    // SDK: setVariable(configId, ...) wants the editor-panel KEY (type:variable),
-    // not the bound controlId string. cfg.lineVar is the control binding value.
+    // Pass bound controlId (cfg.lineVar), fall back to config key — same as body-map.
     var bound = state.cfg && state.cfg.lineVar;
     if (!client || !bound) { render(state.rows, state.cfg, state.live); return; }
     try {
-      if (!line) {
-        client.config.setVariable('lineVar');
-      } else {
-        client.config.setVariable('lineVar', String(line));
-        if (state.cfg.onLineSelect) client.config.triggerAction('onLineSelect');
+      function push(id){
+        if (!line) client.config.setVariable(id);
+        else client.config.setVariable(id, String(line));
+      }
+      try { push(bound); } catch (e1) { try { push('lineVar'); } catch (e2) {
+        console.error('[pnl-stmt] setVariable failed', e1, e2);
+      } }
+      if (state.cfg.onLineSelect){
+        try { client.config.triggerAction(state.cfg.onLineSelect); }
+        catch (e3) { try { client.config.triggerAction('onLineSelect'); } catch (e4) {} }
       }
     } catch (e) { console.error('[pnl-stmt] setVariable failed', e); }
     render(state.rows, state.cfg, state.live);
@@ -391,6 +423,12 @@
     render(rows, cfg, true);
   }
 
+  function unwrapData(dd){
+    if (dd && typeof dd === 'object' && dd.data && typeof dd.data === 'object' && !Array.isArray(dd.data) &&
+        ('offset' in dd || 'isComplete' in dd)) return dd.data;
+    return dd;
+  }
+
   function bindSource(cfg){
     if (state.unsub) { try { state.unsub(); } catch (e) {} state.unsub = null; }
     if (state.unsubCols) { try { state.unsubCols(); } catch (e) {} state.unsubCols = null; }
@@ -399,31 +437,58 @@
     if (!client){ render(previewRows(), cfg, false); return; }
     var sid = sourceId(cfg.source);
     if (!sid || !colKey(cfg.line) || !colKey(cfg.prior) || !colKey(cfg.current)){
-      // Editor / unbound only
       render(previewRows(), cfg, false);
       return;
     }
     showWaiting(cfg, 'Loading statement from workbook…');
     try {
+      function onCols(cols){
+        state.cols = cols || {};
+        // Rebind authoring ids → runtime column ids by display name (body-map pattern)
+        if (state._didBind || !client.config || !client.config.setKey) return;
+        var dataKeys = state._lastData ? Object.keys(state._lastData) : [];
+        if (dataKeys.length) return;
+        var fake = {};
+        Object.keys(state.cols).forEach(function(id){ fake[id] = [1]; });
+        var r = findCol(fake, colKey(cfg.line), ['line', 'account']);
+        var p = findCol(fake, colKey(cfg.prior), ['prior ttm', 'prior']);
+        var c = findCol(fake, colKey(cfg.current), ['current ttm', 'current']);
+        var o = findCol(fake, colKey(cfg.order), ['line order', 'order']);
+        var sec = findCol(fake, colKey(cfg.section), ['section']);
+        var rk = findCol(fake, colKey(cfg.rowKind), ['row kind', 'kind']);
+        if (!(r && p && c)) return;
+        state._didBind = true;
+        try { client.config.setKey('line', r); } catch (e) {}
+        try { client.config.setKey('prior', p); } catch (e) {}
+        try { client.config.setKey('current', c); } catch (e) {}
+        try { if (o) client.config.setKey('order', o); } catch (e) {}
+        try { if (sec) client.config.setKey('section', sec); } catch (e) {}
+        try { if (rk) client.config.setKey('rowKind', rk); } catch (e) {}
+      }
       if (client.elements.subscribeToElementColumns){
-        state.unsubCols = client.elements.subscribeToElementColumns(sid, function(cols){
-          state.cols = cols || {};
-        });
+        state.unsubCols = client.elements.subscribeToElementColumns(sid, onCols);
       }
-      if (client.elements.getElementColumns){
-        try {
-          var colsP = client.elements.getElementColumns(sid);
-          if (colsP && colsP.then) colsP.then(function(cols){ state.cols = cols || {}; }).catch(function(){});
-        } catch (e0) {}
+      try {
+        var colsP = client.elements.getElementColumns && client.elements.getElementColumns(sid);
+        if (colsP && colsP.then) colsP.then(onCols).catch(function(){});
+      } catch (e0) {}
+
+      function onData(dd){
+        var payload = unwrapData(dd);
+        state._lastData = payload;
+        ingest(payload, cfg);
       }
-      state.unsub = client.elements.subscribeToElementData(sid, function(data){
-        ingest(data, cfg);
+      var unsubs = [];
+      // Subscribe under runtime sid, authoring elementId, and raw source object
+      ;[sid, cfg.source, (cfg.source && cfg.source.elementId), 'tbl-pnl-stmt', 'tbl-pnl-live'].forEach(function(x){
+        if (!x) return;
+        try { unsubs.push(client.elements.subscribeToElementData(x, onData)); } catch (e) {}
       });
-      client.elements.getElementData(sid).then(function(data){ ingest(data, cfg); })
-        .catch(function(err){
-          console.error('[pnl-stmt] getElementData failed', err);
-          showWaiting(cfg, 'Could not read source element. Is it on this page?');
-        });
+      state.unsub = function(){ unsubs.forEach(function(u){ try { u && u(); } catch (e) {} }); };
+      client.elements.getElementData(sid).then(onData).catch(function(err){
+        console.error('[pnl-stmt] getElementData failed', err);
+        showWaiting(cfg, 'Could not read source — is tbl-pnl-stmt on this page?');
+      });
     } catch (e) {
       console.error('[pnl-stmt] bind failed', e);
       showWaiting(cfg, 'Plugin bind failed — see console.');
