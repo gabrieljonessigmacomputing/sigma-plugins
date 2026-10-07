@@ -8,69 +8,86 @@
 <style>
   :root{
     --navy:#1A1C3A; --primary:#4F529B; --accent:#F58132; --mint:#2E9E7B;
-    --text:#1a2230; --muted:#6b7380; --line:#e6e9ef; --row:#f7f8fb;
-    --neg:#A32D2D; --pos:#1F7A4C; --total-bg:#EEF7F2; --head-bg:#F3F5FA;
+    --text:#111827; --muted:#6b7280; --rule:#d1d5db; --rule-soft:#e5e7eb;
+    --band:#f3f4f6; --total:#f0fdf4; --neg:#9f1239; --pos:#047857;
+    --paper:#ffffff;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
-    font-family:Inter,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    font-family:"IBM Plex Sans","Segoe UI",Helvetica,Arial,sans-serif;
     background:transparent;color:var(--text);overflow:hidden;
   }
-  #app{height:100%;width:100%;display:flex;flex-direction:column;padding:10px 12px 8px}
-  #band{
-    display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
-    padding:10px 14px;border-radius:10px;margin-bottom:10px;
-    background:linear-gradient(100deg,var(--navy) 0%,var(--primary) 72%,var(--accent) 140%);
-    color:#fff;min-height:52px;
+  #app{height:100%;width:100%;display:flex;flex-direction:column;padding:8px 10px 6px}
+  #mast{
+    display:grid;grid-template-columns:1fr auto;gap:10px 16px;align-items:end;
+    padding:0 2px 10px;border-bottom:2px solid var(--navy);margin-bottom:0;
   }
-  #band .t{font-size:15px;font-weight:700;letter-spacing:.01em}
-  #band .s{font-size:11px;opacity:.85;margin-top:2px}
-  #band .meta{font-size:11px;opacity:.9;text-align:right;line-height:1.35}
-  #stage{flex:1;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+  #mast .entity{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--primary)}
+  #mast .title{font-size:18px;font-weight:700;letter-spacing:-.01em;color:var(--navy);line-height:1.15;margin-top:2px}
+  #mast .period{font-size:12px;color:var(--muted);margin-top:3px}
+  #mast .right{text-align:right;font-size:11px;color:var(--muted);line-height:1.45}
+  #mast .right b{color:var(--text);font-weight:650}
+  #stage{flex:1;min-height:0;overflow:auto;background:var(--paper)}
   table{width:100%;border-collapse:collapse;font-size:12.5px}
   thead th{
-    position:sticky;top:0;z-index:1;background:var(--head-bg);
-    border-bottom:1px solid var(--line);padding:9px 12px;
-    font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);
+    position:sticky;top:0;z-index:2;background:var(--paper);
+    border-bottom:1px solid var(--navy);padding:10px 10px 8px;
+    font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
   }
-  thead th.num, td.num{text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  thead th.num, td.num{
+    text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
+    font-family:"IBM Plex Mono","SF Mono",Menlo,Consolas,monospace;font-size:12px;
+  }
   thead th.line, td.line{text-align:left}
-  tbody td{padding:8px 12px;border-bottom:1px solid #eef1f5;vertical-align:middle}
-  tr.alt td{background:var(--row)}
+  tbody td{padding:7px 10px;border-bottom:1px solid var(--rule-soft);vertical-align:middle}
   tr.section td{
-    background:var(--head-bg);font-weight:700;font-size:11px;letter-spacing:.03em;
-    text-transform:uppercase;color:var(--primary);padding-top:11px;padding-bottom:11px;
+    background:var(--band);font-weight:700;font-size:10.5px;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--navy);padding-top:10px;padding-bottom:10px;
+    border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
   }
-  tr.subtotal td{font-weight:650;border-top:1px solid #d7dce6}
+  tr.detail td.line{padding-left:22px}
+  tr.detail-2 td.line{padding-left:36px}
+  tr.subtotal td{
+    font-weight:650;border-top:1px solid var(--rule);
+    background:#fafafa;
+  }
+  tr.subtotal td.num{border-top:1px solid var(--text)}
   tr.total td{
-    background:var(--total-bg);font-weight:750;border-top:2px solid var(--mint);
-    border-bottom:2px solid var(--mint);
+    background:var(--total);font-weight:750;border-top:2px solid var(--navy);
+    border-bottom:3px double var(--navy);padding-top:10px;padding-bottom:10px;
   }
   tr.total td.line{color:var(--navy)}
-  .indent-1{padding-left:28px !important}
-  .indent-2{padding-left:44px !important}
   .neg{color:var(--neg)}
   .pos{color:var(--pos)}
   .muted{color:var(--muted)}
+  .spacer td{padding:4px 0;border:0;background:transparent}
   #empty{
-    flex:1;display:flex;align-items:center;justify-content:center;
-    color:var(--muted);font-size:13px;text-align:center;padding:24px;line-height:1.5;
+    height:100%;min-height:180px;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:13px;text-align:center;padding:24px;line-height:1.55;
   }
-  #foot{font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;justify-content:space-between;gap:8px}
+  #foot{
+    font-size:10px;color:var(--muted);margin-top:6px;padding-top:6px;
+    border-top:1px solid var(--rule-soft);
+    display:flex;justify-content:space-between;gap:8px;
+  }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 </head>
 <body>
 <div id="app">
-  <div id="band">
+  <div id="mast">
     <div>
-      <div class="t" id="ttl">P&amp;L Statement</div>
-      <div class="s" id="sub">Prior vs Current · contribution bridge</div>
+      <div class="entity" id="entity">Practice</div>
+      <div class="title" id="ttl">Consolidated Statement of Operations</div>
+      <div class="period" id="sub">Prior TTM vs Current TTM</div>
     </div>
-    <div class="meta" id="meta"></div>
+    <div class="right" id="meta"></div>
   </div>
   <div id="stage"></div>
-  <div id="foot"><span id="foot-l"></span><span id="foot-r">Statement view</span></div>
+  <div id="foot"><span id="foot-l"></span><span id="foot-r">Amounts in USD</span></div>
 </div>
 <script>
 (function () {
@@ -84,12 +101,16 @@
     { name: 'prior', type: 'column', source: 'source', allowMultiple: false, allowedTypes: ['number','integer'], label: 'Prior period' },
     { name: 'current', type: 'column', source: 'source', allowMultiple: false, allowedTypes: ['number','integer'], label: 'Current period' },
     { name: 'order', type: 'column', source: 'source', allowMultiple: false, allowedTypes: ['number','integer'], label: 'Sort order (optional)' },
-    { name: 'title', type: 'text', label: 'Title', defaultValue: 'P&L Statement' },
-    { name: 'subtitle', type: 'text', label: 'Subtitle', defaultValue: 'Prior vs Current · statement layout' },
+    { name: 'title', type: 'text', label: 'Statement title', defaultValue: 'Consolidated Statement of Operations' },
+    { name: 'subtitle', type: 'text', label: 'Period label', defaultValue: 'Prior TTM vs Current TTM' },
+    { name: 'entity', type: 'text', label: 'Entity / practice', defaultValue: 'Practice' },
+    { name: 'priorLabel', type: 'text', label: 'Prior column header', defaultValue: 'Prior TTM' },
+    { name: 'currentLabel', type: 'text', label: 'Current column header', defaultValue: 'Current TTM' },
     { name: 'navy', type: 'text', label: 'Navy hex', defaultValue: '#1A1C3A' },
     { name: 'primary', type: 'text', label: 'Primary hex', defaultValue: '#4F529B' },
     { name: 'accent', type: 'text', label: 'Accent hex', defaultValue: '#F58132' },
-    { name: 'siCompact', type: 'toggle', label: 'SI compact currency ($109M)', defaultValue: true }
+    { name: 'siCompact', type: 'toggle', label: 'SI compact currency ($109M)', defaultValue: true },
+    { name: 'accountingNeg', type: 'toggle', label: 'Accounting negatives ($x)', defaultValue: true }
   ];
   if (client) client.config.configureEditorPanel(defs);
 
@@ -108,38 +129,35 @@
     var n = Number(String(v).replace(/[$,\s]/g,'').replace(/\((.*)\)/,'-$1'));
     return isFinite(n) ? n : null;
   }
-  function fmtSI(v){
+  function fmtSI(v, accounting){
     if (v == null || isNaN(v)) return '—';
     var neg = v < 0, a = Math.abs(v), s;
     if (a >= 1e9) s = (a/1e9).toFixed(2).replace(/\.00$/,'') + 'B';
     else if (a >= 1e6) s = (a/1e6).toFixed(a >= 1e8 ? 1 : 2).replace(/\.00$/,'') + 'M';
     else if (a >= 1e3) s = (a/1e3).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/,'') + 'K';
     else s = Math.round(a).toLocaleString('en-US');
+    if (neg && accounting) return '($' + s + ')';
     return (neg ? '-$' : '$') + s;
   }
-  function fmtFull(v){
+  function fmtFull(v, accounting){
     if (v == null || isNaN(v)) return '—';
     var neg = v < 0, a = Math.abs(v);
     var s = a.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    return neg ? ('($' + s + ')') : ('$' + s);
+    if (neg && accounting) return '($' + s + ')';
+    return neg ? ('-$' + s) : ('$' + s);
   }
   function fmtPct(v){
     if (v == null || isNaN(v) || !isFinite(v)) return '—';
     var s = (Math.abs(v)*100).toFixed(1) + '%';
-    return (v < 0 ? '↓ ' : v > 0 ? '↑ ' : '') + s;
+    return (v < 0 ? '(' : '') + s + (v < 0 ? ')' : '');
   }
   function classify(name){
-    var n = String(name || '').toLowerCase();
-    if (!n) return 'line';
-    if (/^(revenue|income|expenses?|costs?|other)$/.test(n)) return 'section';
-    if (/(contribution|net income|operating income|gross (profit|margin|contrib)|ebitda|total )/.test(n)) return 'total';
-    if (/(gross after|after .*cost|subtotal)/.test(n)) return 'subtotal';
-    return 'line';
-  }
-  function indentFor(name, kind){
-    if (kind === 'section' || kind === 'total') return 0;
-    if (kind === 'subtotal') return 0;
-    return 1;
+    var n = String(name || '').toLowerCase().trim();
+    if (!n) return 'detail';
+    if (/^(revenue|revenues|income|expenses?|costs?|cogs|operating expenses?|other|other income|deductions)$/.test(n)) return 'section';
+    if (/(^total |contribution|net (income|earnings|revenue|patient)|operating (income|profit|loss)|gross (profit|margin|contrib)|ebitda|ebit\b)/.test(n)) return 'total';
+    if (/(gross after|after .*cost|subtotal|income from|income before)/.test(n)) return 'subtotal';
+    return 'detail';
   }
   function applyTheme(cfg){
     var r = document.documentElement.style;
@@ -171,27 +189,32 @@
 
   function previewRows(){
     return [
-      { line: 'Net patient revenue', prior: 101100000, current: 109000000, order: 1 },
-      { line: 'Clinical & supply cost', prior: -40100000, current: -42720000, order: 2 },
-      { line: 'Gross after clinical cost', prior: 61000000, current: 66280000, order: 3 },
-      { line: 'Ancillary / medspa fees', prior: 38200000, current: 40720000, order: 4 },
-      { line: 'Cancellations & revisions', prior: -590000, current: -680000, order: 5 },
-      { line: 'Practice overhead', prior: -27400000, current: -29077000, order: 6 },
-      { line: 'Practice contribution', prior: 71210000, current: 77533000, order: 7 }
+      { line: 'Revenue', prior: null, current: null, order: 1 },
+      { line: 'Net patient revenue', prior: 101100000, current: 109000000, order: 2 },
+      { line: 'Ancillary / medspa fees', prior: 38200000, current: 40720000, order: 3 },
+      { line: 'Total revenue', prior: 139300000, current: 149720000, order: 4 },
+      { line: 'Expenses', prior: null, current: null, order: 5 },
+      { line: 'Clinical & supply cost', prior: -40100000, current: -42720000, order: 6 },
+      { line: 'Cancellations & revisions', prior: -590000, current: -680000, order: 7 },
+      { line: 'Practice overhead', prior: -27400000, current: -29077000, order: 8 },
+      { line: 'Gross after clinical cost', prior: 61000000, current: 66280000, order: 9 },
+      { line: 'Practice contribution', prior: 71210000, current: 77533000, order: 10 }
     ];
   }
 
   function render(rows, cfg, live){
-    applyTheme(cfg || {});
-    document.getElementById('ttl').textContent = (cfg && cfg.title) || 'P&L Statement';
-    document.getElementById('sub').textContent = (cfg && cfg.subtitle) || 'Prior vs Current · statement layout';
+    cfg = cfg || {};
+    applyTheme(cfg);
+    document.getElementById('entity').textContent = cfg.entity || 'Practice';
+    document.getElementById('ttl').textContent = cfg.title || 'Consolidated Statement of Operations';
+    document.getElementById('sub').textContent = cfg.subtitle || 'Prior TTM vs Current TTM';
     document.getElementById('meta').innerHTML = live
-      ? (rows.length + ' lines')
-      : ('PREVIEW<br/>' + rows.length + ' sample lines');
+      ? ('<b>' + rows.length + '</b> line items<br/>Workbook-bound')
+      : ('<b>PREVIEW</b><br/>' + rows.length + ' sample lines');
     document.getElementById('foot-l').textContent = live
-      ? 'Bound to workbook source'
-      : 'Configure source · Line · Prior · Current in the editor panel';
-    document.getElementById('foot-r').textContent = (cfg && cfg.siCompact !== false) ? 'SI compact $' : 'Full currency';
+      ? 'Statement layout · bound to source'
+      : 'Map Line · Prior · Current in the editor panel';
+    document.getElementById('foot-r').textContent = (cfg.siCompact !== false) ? 'USD · SI compact' : 'USD';
 
     var stage = document.getElementById('stage');
     if (!rows || !rows.length){
@@ -199,33 +222,39 @@
       return;
     }
 
-    var si = !cfg || cfg.siCompact !== false;
-    var money = si ? fmtSI : fmtFull;
+    var si = cfg.siCompact !== false;
+    var accounting = cfg.accountingNeg !== false;
+    var money = function(v){ return (si ? fmtSI : fmtFull)(v, accounting); };
+    var priorH = cfg.priorLabel || 'Prior TTM';
+    var currH = cfg.currentLabel || 'Current TTM';
+
     var html = ['<table><thead><tr>',
-      '<th class="line">Line</th>',
-      '<th class="num">Prior</th>',
-      '<th class="num">Current</th>',
-      '<th class="num">Δ</th>',
-      '<th class="num">Δ %</th>',
+      '<th class="line">Account</th>',
+      '<th class="num">' + escapeHtml(priorH) + '</th>',
+      '<th class="num">' + escapeHtml(currH) + '</th>',
+      '<th class="num">Variance</th>',
+      '<th class="num">Var %</th>',
       '</tr></thead><tbody>'];
 
-    var alt = false;
-    rows.forEach(function(r){
+    rows.forEach(function(r, idx){
       var kind = classify(r.line);
-      var ind = indentFor(r.line, kind);
+      var hasVals = r.prior != null || r.current != null;
+      if (kind === 'section' && !hasVals){
+        if (idx > 0) html.push('<tr class="spacer"><td colspan="5"></td></tr>');
+        html.push('<tr class="section"><td class="line" colspan="5">' + escapeHtml(r.line) + '</td></tr>');
+        return;
+      }
       var delta = (r.current != null && r.prior != null) ? (r.current - r.prior) : null;
       var pct = (delta != null && r.prior) ? (delta / Math.abs(r.prior)) : null;
-      var cls = kind;
-      if (kind === 'line') { cls += alt ? ' alt' : ''; alt = !alt; }
-      else alt = false;
+      var cls = kind === 'detail' ? 'detail' : kind;
       var dCls = delta == null ? 'muted' : (delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'muted'));
       var pCls = pct == null ? 'muted' : (pct < 0 ? 'neg' : (pct > 0 ? 'pos' : 'muted'));
-      html.push('<tr class="'+cls+'">');
-      html.push('<td class="line'+(ind?(' indent-'+ind):'')+'">'+escapeHtml(r.line)+'</td>');
-      html.push('<td class="num">'+(r.prior==null?'—':money(r.prior))+'</td>');
-      html.push('<td class="num">'+(r.current==null?'—':money(r.current))+'</td>');
-      html.push('<td class="num '+dCls+'">'+(delta==null?'—':money(delta))+'</td>');
-      html.push('<td class="num '+pCls+'">'+(pct==null?'—':fmtPct(pct))+'</td>');
+      html.push('<tr class="' + cls + '">');
+      html.push('<td class="line">' + escapeHtml(r.line) + '</td>');
+      html.push('<td class="num">' + (r.prior == null ? '—' : money(r.prior)) + '</td>');
+      html.push('<td class="num">' + (r.current == null ? '—' : money(r.current)) + '</td>');
+      html.push('<td class="num ' + dCls + '">' + (delta == null ? '—' : money(delta)) + '</td>');
+      html.push('<td class="num ' + pCls + '">' + (pct == null ? '—' : fmtPct(pct)) + '</td>');
       html.push('</tr>');
     });
     html.push('</tbody></table>');
