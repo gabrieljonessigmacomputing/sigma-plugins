@@ -92,7 +92,7 @@
 </div>
 <script>
 (function () {
-  /* pnl-stmt v3 — SDK 1.x UMD exports window.SigmaPlugin */
+  /* pnl-stmt v4 — SDK 1.x UMD exports window.SigmaPlugin */
   var client = (window.SigmaPlugin && window.SigmaPlugin.client)
     || (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
     || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
@@ -403,7 +403,9 @@
     document.getElementById('sub').textContent = (cfg && cfg.subtitle) || 'Prior TTM vs Current TTM · live filtered';
     document.getElementById('meta').innerHTML = '<b>LIVE</b><br/>waiting for source';
     document.getElementById('foot-l').textContent = msg || 'Waiting for workbook data…';
-    document.getElementById('foot-r').textContent = 'Not sample data';
+    var dg = state.diag || {};
+    document.getElementById('foot-r').textContent = 'src=' + (dg.src || '—') + ' · feeds=' + (dg.feeds || 0) +
+      ' keys=' + (dg.keys || 0) + ' cols=' + (dg.cols || 0);
     document.getElementById('stage').innerHTML =
       '<div id="empty">' + (msg || 'Waiting for workbook source data…') + '</div>';
     state.live = false;
@@ -432,8 +434,11 @@
     cfg = cfg || {};
     state.cfg = cfg;
     if (!client){ showWaiting(cfg, 'Sigma plugin SDK did not load.'); return; }
-    // RAW config value, as useElementData(config.source) does.
-    var sid = cfg.source;
+    // Same as the (working) body map: subscribe by the plain element id, and
+    // also by the raw config value in case the host keys the feed by that.
+    var raw = cfg.source;
+    var sid = sourceId(raw);
+    state.diag = { srcType: typeof raw, src: (function(){ try { return JSON.stringify(raw); } catch (e) { return String(raw); } })(), feeds: 0, keys: 0, cols: 0 };
     if (!sid){
       showWaiting(cfg, 'Bind source to tbl-pnl-live (P&L Live).');
       return;
@@ -445,28 +450,31 @@
       showWaiting(cfg, 'Loading statement from workbook…');
     }
     try {
+      var ids = [sid];
+      if (raw && raw !== sid) ids.push(raw);
       function onCols(cols){
-        state.cols = cols || {};
+        if (!cols || !Object.keys(cols).length) return;
+        state.cols = cols;
+        state.diag.cols = Object.keys(cols).length;
         if (state._lastData) ingest(state._lastData, cfg);
       }
-      if (client.elements.subscribeToElementColumns){
-        state.unsubCols = client.elements.subscribeToElementColumns(sid, onCols);
-      }
-      try {
-        var colsP = client.elements.getElementColumns && client.elements.getElementColumns(sid);
-        if (colsP && colsP.then) colsP.then(onCols).catch(function(){});
-      } catch (e0) {}
-
       function onData(dd){
-        var payload = unwrapData(dd);
+        var payload = unwrapData(dd) || {};
+        state.diag.feeds++;
+        // Two subscriptions to the SAME element: keep whichever feed has rows.
+        if (!Object.keys(payload).length && state._lastData && Object.keys(state._lastData).length) return;
+        state.diag.keys = Object.keys(payload).length;
         state._lastData = payload;
         ingest(payload, cfg);
+        try { client.config.setLoadingState(false); } catch (e) {}
       }
       var unsubs = [];
-      // Subscribe ONLY to the bound source — a second feed (e.g. the
-      // Product×State grain table) would race and overwrite the statement.
-      try { unsubs.push(client.elements.subscribeToElementData(sid, onData)); } catch (e) {}
+      ids.forEach(function(x){
+        try { unsubs.push(client.elements.subscribeToElementColumns(x, onCols)); } catch (e) {}
+        try { unsubs.push(client.elements.subscribeToElementData(x, onData)); } catch (e) {}
+      });
       state.unsub = function(){ unsubs.forEach(function(u){ try { u && u(); } catch (e) {} }); };
+      state.unsubCols = null;
     } catch (e) {
       console.error('[pnl-stmt] bind failed', e);
       showWaiting(cfg, 'Plugin bind failed — see console.');
