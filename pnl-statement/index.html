@@ -439,9 +439,9 @@
     cfg = cfg || {};
     state.cfg = cfg;
     if (!client){ render(previewRows(), cfg, false); return; }
-    var sid = sourceId(cfg.source);
-    // Prefer the filter-aware rollup even if the workbook still points at grain.
-    if (!sid || sid === 'tbl-pnl-stmt') sid = sid || 'tbl-pnl-live';
+    var sid = sourceId(cfg.source) || 'tbl-pnl-live';
+    // Prefer the filter-aware rollup when workbook still points at Product×State grain.
+    if (sid === 'tbl-pnl-stmt') sid = 'tbl-pnl-live';
     if (!sid){
       showWaiting(cfg, 'Bind source to tbl-pnl-live (P&L Live).');
       return;
