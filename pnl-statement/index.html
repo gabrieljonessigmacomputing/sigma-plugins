@@ -4,7 +4,9 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>P&amp;L Statement — Sigma Plugin</title>
-<script src="https://unpkg.com/@sigmacomputing/plugin"></script>
+<!-- SDK UMD needs window.React at load (createContext) and exports window.SigmaPlugin. -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/@sigmacomputing/plugin@1.3.2/dist/umd/sigmacomputing-plugin.umd.js"></script>
 <style>
   :root{
     --navy:#1A1C3A; --primary:#4F529B; --accent:#F58132; --mint:#2E9E7B;
@@ -90,9 +92,12 @@
 </div>
 <script>
 (function () {
-  var client = (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
+  /* pnl-stmt v3 — SDK 1.x UMD exports window.SigmaPlugin */
+  var client = (window.SigmaPlugin && window.SigmaPlugin.client)
+    || (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
     || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
     || null;
+  if (!client) console.error('[pnl-stmt] Sigma plugin SDK not loaded');
 
   var defs = [
     { name: 'source', type: 'element' },
@@ -267,8 +272,8 @@
         if (ord != null && ord < agg.order) agg.order = ord;
       }
     }
-    // SQL $MM grains are ~tens/hundreds; dollarize for SI ($109M not $109)
-    var scale = (maxAbs > 0 && maxAbs < 10000) ? 1000000 : 1;
+    // Source is already in dollars (tbl-pnl-live * 1e6) — never rescale.
+    var scale = 1;
     var rows = Object.keys(byLine).map(function(k){
       var r = byLine[k];
       return {
@@ -301,25 +306,13 @@
 
   function selectLine(line){
     state.selected = line;
-    // Config VALUE is the controlId (PnlLineFilter). Never pass literal 'lineVar'.
+    // RAW config value, exactly as the SDK's useVariable(config.lineVar) does.
     var bound = state.cfg && state.cfg.lineVar;
-    if (bound && typeof bound === 'object'){
-      bound = bound.controlId || bound.id || bound.name || null;
-    }
-    if (!bound) bound = 'PnlLineFilter';
-    if (!client) { render(state.rows, state.cfg, state.live); return; }
+    if (!client || !bound) { render(state.rows, state.cfg, state.live); return; }
     try {
-      function push(id){
-        if (!id || id === 'lineVar') return;
-        if (!line) client.config.setVariable(id);
-        else client.config.setVariable(id, String(line));
-      }
-      push(String(bound));
-      if (String(bound) !== 'PnlLineFilter') push('PnlLineFilter');
-      if (state.cfg.onLineSelect){
-        try { client.config.triggerAction(state.cfg.onLineSelect); }
-        catch (e3) { try { client.config.triggerAction('onLineSelect'); } catch (e4) {} }
-      }
+      if (!line) client.config.setVariable(bound);
+      else client.config.setVariable(bound, String(line));
+      if (state.cfg.onLineSelect) client.config.triggerAction(state.cfg.onLineSelect);
     } catch (e) { console.error('[pnl-stmt] setVariable failed', e); }
     render(state.rows, state.cfg, state.live);
   }
@@ -438,10 +431,9 @@
     if (state.unsubCols) { try { state.unsubCols(); } catch (e) {} state.unsubCols = null; }
     cfg = cfg || {};
     state.cfg = cfg;
-    if (!client){ render(previewRows(), cfg, false); return; }
-    var sid = sourceId(cfg.source) || 'tbl-pnl-live';
-    // Prefer the filter-aware rollup when workbook still points at Product×State grain.
-    if (sid === 'tbl-pnl-stmt') sid = 'tbl-pnl-live';
+    if (!client){ showWaiting(cfg, 'Sigma plugin SDK did not load.'); return; }
+    // RAW config value, as useElementData(config.source) does.
+    var sid = cfg.source;
     if (!sid){
       showWaiting(cfg, 'Bind source to tbl-pnl-live (P&L Live).');
       return;
@@ -455,26 +447,7 @@
     try {
       function onCols(cols){
         state.cols = cols || {};
-        // Rebind authoring ids → runtime column ids by display name (body-map pattern)
-        if (state._didBind || !client.config || !client.config.setKey) return;
-        var dataKeys = state._lastData ? Object.keys(state._lastData) : [];
-        if (dataKeys.length) return;
-        var fake = {};
-        Object.keys(state.cols).forEach(function(id){ fake[id] = [1]; });
-        var r = findCol(fake, colKey(cfg.line), ['line', 'account']);
-        var p = findCol(fake, colKey(cfg.prior), ['prior ttm', 'prior']);
-        var c = findCol(fake, colKey(cfg.current), ['current ttm', 'current']);
-        var o = findCol(fake, colKey(cfg.order), ['line order', 'order']);
-        var sec = findCol(fake, colKey(cfg.section), ['section']);
-        var rk = findCol(fake, colKey(cfg.rowKind), ['row kind', 'kind']);
-        if (!(r && p && c)) return;
-        state._didBind = true;
-        try { client.config.setKey('line', r); } catch (e) {}
-        try { client.config.setKey('prior', p); } catch (e) {}
-        try { client.config.setKey('current', c); } catch (e) {}
-        try { if (o) client.config.setKey('order', o); } catch (e) {}
-        try { if (sec) client.config.setKey('section', sec); } catch (e) {}
-        try { if (rk) client.config.setKey('rowKind', rk); } catch (e) {}
+        if (state._lastData) ingest(state._lastData, cfg);
       }
       if (client.elements.subscribeToElementColumns){
         state.unsubCols = client.elements.subscribeToElementColumns(sid, onCols);
@@ -490,15 +463,9 @@
         ingest(payload, cfg);
       }
       var unsubs = [];
-      // Subscribe under runtime sid, authoring elementId, and both P&L tables
-      ;[sid, cfg.source, (cfg.source && cfg.source.elementId), 'tbl-pnl-live', 'tbl-pnl-stmt'].forEach(function(x){
-        if (!x) return;
-        try { unsubs.push(client.elements.subscribeToElementData(x, onData)); } catch (e) {}
-        try {
-          var gp = client.elements.getElementData && client.elements.getElementData(x);
-          if (gp && gp.then) gp.then(onData).catch(function(){});
-        } catch (e2) {}
-      });
+      // Subscribe ONLY to the bound source — a second feed (e.g. the
+      // Product×State grain table) would race and overwrite the statement.
+      try { unsubs.push(client.elements.subscribeToElementData(sid, onData)); } catch (e) {}
       state.unsub = function(){ unsubs.forEach(function(u){ try { u && u(); } catch (e) {} }); };
     } catch (e) {
       console.error('[pnl-stmt] bind failed', e);
@@ -508,7 +475,8 @@
 
   if (client) {
     client.config.subscribe(bindSource);
-    try { client.config.getConfig().then(bindSource); } catch (e) { bindSource({}); }
+    var initCfg = client.config.get();
+    if (initCfg && initCfg.source) bindSource(initCfg);
   } else {
     bindSource({});
   }
