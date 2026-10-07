@@ -106,7 +106,7 @@
 </div>
 <script>
 (function () {
-  /* pnl-stmt v4 — SDK 1.x UMD exports window.SigmaPlugin */
+  /* pnl-stmt v4w — SDK 1.x UMD exports window.SigmaPlugin */
   var client = (window.SigmaPlugin && window.SigmaPlugin.client)
     || (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
     || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
@@ -427,8 +427,8 @@
     document.getElementById('foot-r').textContent = 'src=' + (dg.src || '—') + ' · feeds=' + (dg.feeds || 0) +
       ' keys=' + (dg.keys || 0) + ' cols=' + (dg.cols || 0);
     document.getElementById('stage').innerHTML =
-      '<div id="empty">' + (msg || 'Waiting for workbook source data…') + '</div>' +
-      '<pre id="wire" style="font:10px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;color:#6b7280;padding:6px 12px"></pre>';
+      '<pre id="wire" style="font:10px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;color:#6b7280;padding:6px 12px;margin:0"></pre>' +
+      '<div id="empty" style="height:auto;min-height:60px">' + (msg || 'Waiting for workbook source data…') + '</div>';
     paintWire();
     state.live = false;
     state.rows = [];
