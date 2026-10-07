@@ -301,17 +301,21 @@
 
   function selectLine(line){
     state.selected = line;
-    // Pass bound controlId (cfg.lineVar), fall back to config key — same as body-map.
+    // Config VALUE is the controlId (PnlLineFilter). Never pass literal 'lineVar'.
     var bound = state.cfg && state.cfg.lineVar;
-    if (!client || !bound) { render(state.rows, state.cfg, state.live); return; }
+    if (bound && typeof bound === 'object'){
+      bound = bound.controlId || bound.id || bound.name || null;
+    }
+    if (!bound) bound = 'PnlLineFilter';
+    if (!client) { render(state.rows, state.cfg, state.live); return; }
     try {
       function push(id){
+        if (!id || id === 'lineVar') return;
         if (!line) client.config.setVariable(id);
         else client.config.setVariable(id, String(line));
       }
-      try { push(bound); } catch (e1) { try { push('lineVar'); } catch (e2) {
-        console.error('[pnl-stmt] setVariable failed', e1, e2);
-      } }
+      push(String(bound));
+      if (String(bound) !== 'PnlLineFilter') push('PnlLineFilter');
       if (state.cfg.onLineSelect){
         try { client.config.triggerAction(state.cfg.onLineSelect); }
         catch (e3) { try { client.config.triggerAction('onLineSelect'); } catch (e4) {} }
@@ -436,11 +440,18 @@
     state.cfg = cfg;
     if (!client){ render(previewRows(), cfg, false); return; }
     var sid = sourceId(cfg.source);
-    if (!sid || !colKey(cfg.line) || !colKey(cfg.prior) || !colKey(cfg.current)){
-      render(previewRows(), cfg, false);
+    // Prefer the filter-aware rollup even if the workbook still points at grain.
+    if (!sid || sid === 'tbl-pnl-stmt') sid = sid || 'tbl-pnl-live';
+    if (!sid){
+      showWaiting(cfg, 'Bind source to tbl-pnl-live (P&L Live).');
       return;
     }
-    showWaiting(cfg, 'Loading statement from workbook…');
+    if (!colKey(cfg.line) || !colKey(cfg.prior) || !colKey(cfg.current)){
+      // Source present but columns not mapped yet — wait, do NOT show sample.
+      showWaiting(cfg, 'Map Line · Prior · Current columns (or wait for auto-bind).');
+    } else {
+      showWaiting(cfg, 'Loading statement from workbook…');
+    }
     try {
       function onCols(cols){
         state.cols = cols || {};
@@ -479,16 +490,16 @@
         ingest(payload, cfg);
       }
       var unsubs = [];
-      // Subscribe under runtime sid, authoring elementId, and raw source object
-      ;[sid, cfg.source, (cfg.source && cfg.source.elementId), 'tbl-pnl-stmt', 'tbl-pnl-live'].forEach(function(x){
+      // Subscribe under runtime sid, authoring elementId, and both P&L tables
+      ;[sid, cfg.source, (cfg.source && cfg.source.elementId), 'tbl-pnl-live', 'tbl-pnl-stmt'].forEach(function(x){
         if (!x) return;
         try { unsubs.push(client.elements.subscribeToElementData(x, onData)); } catch (e) {}
+        try {
+          var gp = client.elements.getElementData && client.elements.getElementData(x);
+          if (gp && gp.then) gp.then(onData).catch(function(){});
+        } catch (e2) {}
       });
       state.unsub = function(){ unsubs.forEach(function(u){ try { u && u(); } catch (e) {} }); };
-      client.elements.getElementData(sid).then(onData).catch(function(err){
-        console.error('[pnl-stmt] getElementData failed', err);
-        showWaiting(cfg, 'Could not read source — is tbl-pnl-stmt on this page?');
-      });
     } catch (e) {
       console.error('[pnl-stmt] bind failed', e);
       showWaiting(cfg, 'Plugin bind failed — see console.');
