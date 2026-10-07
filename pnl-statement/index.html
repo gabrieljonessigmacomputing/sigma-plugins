@@ -106,7 +106,7 @@
 </div>
 <script>
 (function () {
-  /* pnl-stmt v4w — SDK 1.x UMD exports window.SigmaPlugin */
+  /* pnl-stmt v5 — SDK 1.x UMD exports window.SigmaPlugin */
   var client = (window.SigmaPlugin && window.SigmaPlugin.client)
     || (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
     || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
@@ -450,10 +450,24 @@
     return dd;
   }
 
+  function bindKey(cfg){
+    try { return JSON.stringify([cfg.source, cfg.line, cfg.prior, cfg.current, cfg.order, cfg.section, cfg.rowKind]); }
+    catch (e) { return String(Math.random()); }
+  }
   function bindSource(cfg){
+    cfg = cfg || {};
+    // Sigma re-delivers config right after init. Re-subscribing to the SAME
+    // source drops the data feed (columns are re-sent, data is not), so keep a
+    // live subscription whenever the binding is unchanged.
+    var key = bindKey(cfg);
+    if (state.unsub && key === state.bindKey){
+      state.cfg = cfg;
+      if (state._lastData && Object.keys(state._lastData).length) ingest(state._lastData, cfg);
+      return;
+    }
+    state.bindKey = key;
     if (state.unsub) { try { state.unsub(); } catch (e) {} state.unsub = null; }
     if (state.unsubCols) { try { state.unsubCols(); } catch (e) {} state.unsubCols = null; }
-    cfg = cfg || {};
     state.cfg = cfg;
     if (!client){ showWaiting(cfg, 'Sigma plugin SDK did not load.'); return; }
     // Same as the (working) body map: subscribe by the plain element id, and
@@ -487,7 +501,7 @@
         if (!Object.keys(payload).length && state._lastData && Object.keys(state._lastData).length) return;
         state.diag.keys = Object.keys(payload).length;
         state._lastData = payload;
-        ingest(payload, cfg);
+        ingest(payload, state.cfg);
         try { client.config.setLoadingState(false); } catch (e) {}
       }
       var unsubs = [];
