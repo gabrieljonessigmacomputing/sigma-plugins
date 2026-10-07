@@ -106,7 +106,7 @@
 </div>
 <script>
 (function () {
-  /* pnl-stmt v6 — SDK 1.x UMD exports window.SigmaPlugin */
+  /* pnl-stmt v9 — SDK 1.x UMD exports window.SigmaPlugin */
   var client = (window.SigmaPlugin && window.SigmaPlugin.client)
     || (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
     || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
@@ -124,6 +124,7 @@
     { name: 'lineVar', type: 'variable', label: 'Click line → control variable',
       description: 'Bind a List control (e.g. PnlLineFilter). Clicking a detail line writes the account name for cross-filtering.' },
     { name: 'onLineSelect', type: 'action-trigger', label: 'On line select action' },
+    { name: 'sourceElementId', type: 'text', label: 'Source element id (workbook spec, optional)' },
     { name: 'title', type: 'text', label: 'Statement title', defaultValue: 'Consolidated Statement of Operations' },
     { name: 'subtitle', type: 'text', label: 'Period label', defaultValue: 'Prior TTM vs Current TTM · live filtered' },
     { name: 'entity', type: 'text', label: 'Entity / practice', defaultValue: 'Practice' },
@@ -413,7 +414,7 @@
   var T0 = Date.now();
   function paintWire(){
     var w = document.getElementById('wire'); if (!w) return;
-    if (Date.now() - T0 < 10000) { w.textContent = ''; return; }  // diagnostics only if stuck
+    if (Date.now() - T0 < 20000) { w.textContent = ''; return; }  // diagnostics only if stuck >20s
     w.textContent = 'cfg: ' + (function(){ try { return JSON.stringify(state.cfg).slice(0, 400); } catch (e) { return '?'; } })() +
       '\n' + (window.__wire || []).slice(-40).join('\n');
   }
@@ -453,7 +454,7 @@
   }
 
   function bindKey(cfg){
-    try { return JSON.stringify([cfg.source, cfg.line, cfg.prior, cfg.current, cfg.order, cfg.section, cfg.rowKind]); }
+    try { return JSON.stringify([cfg.source, cfg.sourceElementId, cfg.line, cfg.prior, cfg.current, cfg.order, cfg.section, cfg.rowKind]); }
     catch (e) { return String(Math.random()); }
   }
   function bindSource(cfg){
@@ -493,13 +494,29 @@
       try { client.config.setLoadingState(true); } catch (e) {}
       clearTimeout(state.loadTimer);
       state.loadTimer = setTimeout(function(){ try { client.config.setLoadingState(false); } catch (e) {} }, 30000);
+      // Like the body map: also subscribe by the workbook-spec element id
+      // (config text `sourceElementId`, e.g. 'tbl-pnl-live').
       var ids = [sid];
       if (raw && raw !== sid) ids.push(raw);
+      if (cfg.sourceElementId && ids.indexOf(cfg.sourceElementId) < 0) ids.push(cfg.sourceElementId);
       function onCols(cols){
         if (!cols || !Object.keys(cols).length) return;
         state.cols = cols;
         state.diag.cols = Object.keys(cols).length;
         if (state._lastData) ingest(state._lastData, cfg);
+        // Same nudge the (working) body map does: Sigma does not build the
+        // plugin's data query from spec-written column bindings until the
+        // plugin writes them back once. Re-assert each binding as the bare
+        // runtime column id.
+        if (state._didAssert) return;
+        state._didAssert = true;
+        ['line','prior','current','order','section','rowKind'].forEach(function(k){
+          var want = colKey(cfg[k]);
+          if (!want) return;
+          var id = cols[want] ? want : null;
+          if (!id) for (var c in cols) { if (String(cols[c].name || '').toLowerCase() === String(want).toLowerCase()) { id = c; break; } }
+          if (id) { try { client.config.setKey(k, id); } catch (e) {} }
+        });
       }
       function onData(dd){
         var payload = unwrapData(dd) || {};
@@ -525,7 +542,11 @@
   }
 
   if (client) {
-    client.config.subscribe(bindSource);
+    var panelSent = false;
+    client.config.subscribe(function(cfg){
+      if (!panelSent) { panelSent = true; try { client.config.configureEditorPanel(defs); } catch (e) {} }
+      bindSource(cfg);
+    });
     var initCfg = client.config.get();
     if (initCfg && initCfg.source) bindSource(initCfg);
   } else {
