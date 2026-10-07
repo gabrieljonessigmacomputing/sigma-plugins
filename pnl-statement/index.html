@@ -4,6 +4,20 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>P&amp;L Statement — Sigma Plugin</title>
+<script>
+  /* wiretap: record plugin<->Sigma messages so the waiting state can show them */
+  window.__wire = [];
+  (function(){
+    var t0 = Date.now();
+    function note(dir, d){ try { window.__wire.push(((Date.now()-t0)/1000).toFixed(1) + 's ' + dir + ' ' + (d && d.type) +
+      (d && d.args ? ' ' + JSON.stringify(d.args).slice(0, 90) : '') + (d && d.error ? ' ERR ' + JSON.stringify(d.error).slice(0, 120) : '') +
+      (d && d.result !== undefined ? ' -> ' + JSON.stringify(d.result).slice(0, 90) : '')); } catch (e) {} }
+    window.addEventListener('message', function(e){ note('<', e.data); }, true);
+    try { var pm = window.parent.postMessage.bind(window.parent);
+      window.parent.postMessage = function(d, o){ note('>', d); return pm(d, o); }; } catch (e) { window.__wire.push('cannot wrap parent.postMessage: ' + e.message); }
+    window.addEventListener('error', function(e){ window.__wire.push('JS ERROR ' + e.message); });
+  })();
+</script>
 <!-- SDK UMD needs window.React at load (createContext) and exports window.SigmaPlugin. -->
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/@sigmacomputing/plugin@1.3.2/dist/umd/sigmacomputing-plugin.umd.js"></script>
@@ -396,6 +410,12 @@
     });
   }
 
+  function paintWire(){
+    var w = document.getElementById('wire'); if (!w) return;
+    w.textContent = 'cfg: ' + (function(){ try { return JSON.stringify(state.cfg).slice(0, 400); } catch (e) { return '?'; } })() +
+      '\n' + (window.__wire || []).slice(-40).join('\n');
+  }
+  setInterval(paintWire, 500);
   function showWaiting(cfg, msg){
     applyTheme(cfg || {});
     document.getElementById('entity').textContent = (cfg && cfg.entity) || 'Practice';
@@ -407,7 +427,9 @@
     document.getElementById('foot-r').textContent = 'src=' + (dg.src || '—') + ' · feeds=' + (dg.feeds || 0) +
       ' keys=' + (dg.keys || 0) + ' cols=' + (dg.cols || 0);
     document.getElementById('stage').innerHTML =
-      '<div id="empty">' + (msg || 'Waiting for workbook source data…') + '</div>';
+      '<div id="empty">' + (msg || 'Waiting for workbook source data…') + '</div>' +
+      '<pre id="wire" style="font:10px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;color:#6b7280;padding:6px 12px"></pre>';
+    paintWire();
     state.live = false;
     state.rows = [];
   }
