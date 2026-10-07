@@ -224,14 +224,16 @@
 
   function selectLine(line){
     state.selected = line;
-    var varId = state.cfg && state.cfg.lineVar;
-    if (!client || !varId) { render(state.rows, state.cfg, state.live); return; }
+    // SDK: setVariable(configId, ...) wants the editor-panel KEY (type:variable),
+    // not the bound controlId string. cfg.lineVar is the control binding value.
+    var bound = state.cfg && state.cfg.lineVar;
+    if (!client || !bound) { render(state.rows, state.cfg, state.live); return; }
     try {
       if (!line) {
-        client.config.setVariable(varId);
+        client.config.setVariable('lineVar');
       } else {
-        client.config.setVariable(varId, line);
-        if (state.cfg.onLineSelect) client.config.triggerAction(state.cfg.onLineSelect);
+        client.config.setVariable('lineVar', String(line));
+        if (state.cfg.onLineSelect) client.config.triggerAction('onLineSelect');
       }
     } catch (e) { console.error('[pnl-stmt] setVariable failed', e); }
     render(state.rows, state.cfg, state.live);
