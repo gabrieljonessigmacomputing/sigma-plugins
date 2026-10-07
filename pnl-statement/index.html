@@ -47,9 +47,9 @@
     border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
   }
   tr.detail td.line{padding-left:22px}
-  tr.detail{cursor:pointer}
-  tr.detail:hover td{background:#f8fafc}
-  tr.detail.selected td{background:var(--sel)}
+  tr.detail,tr.total,tr.subtotal{cursor:pointer}
+  tr.detail:hover td,tr.total:hover td,tr.subtotal:hover td{background:#f8fafc}
+  tr.detail.selected td,tr.total.selected td,tr.subtotal.selected td{background:var(--sel)}
   tr.subtotal td{font-weight:650;border-top:1px solid var(--rule);background:#fafafa}
   tr.subtotal td.num{border-top:1px solid var(--text)}
   tr.total td{
@@ -297,7 +297,7 @@
       var delta = (r.current != null && r.prior != null) ? (r.current - r.prior) : null;
       var pct = (delta != null && r.prior) ? (delta / Math.abs(r.prior)) : null;
       var cls = kind === 'detail' ? 'detail' : kind;
-      if (kind === 'detail' && state.selected === r.line) cls += ' selected';
+      if (state.selected === r.line) cls += ' selected';
       var dCls = delta == null ? 'muted' : (delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'muted'));
       var pCls = pct == null ? 'muted' : (pct < 0 ? 'neg' : (pct > 0 ? 'pos' : 'muted'));
       html.push('<tr class="' + cls + '" data-line="' + escapeHtml(r.line) + '">');
@@ -310,7 +310,7 @@
     });
     html.push('</tbody></table>');
     stage.innerHTML = html.join('');
-    stage.querySelectorAll('tr.detail[data-line]').forEach(function(tr){
+    stage.querySelectorAll('tr[data-line]').forEach(function(tr){
       tr.addEventListener('click', function(){
         var line = tr.getAttribute('data-line');
         selectLine(state.selected === line ? null : line);
