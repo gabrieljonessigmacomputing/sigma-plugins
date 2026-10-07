@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>P&amp;L Statement — Sigma Plugin</title>
+<script src="https://unpkg.com/@sigmacomputing/plugin"></script>
+<style>
+  :root{
+    --navy:#1A1C3A; --primary:#4F529B; --accent:#F58132; --mint:#2E9E7B;
+    --text:#1a2230; --muted:#6b7380; --line:#e6e9ef; --row:#f7f8fb;
+    --neg:#A32D2D; --pos:#1F7A4C; --total-bg:#EEF7F2; --head-bg:#F3F5FA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:Inter,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    background:transparent;color:var(--text);overflow:hidden;
+  }
+  #app{height:100%;width:100%;display:flex;flex-direction:column;padding:10px 12px 8px}
+  #band{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:12px;
+    padding:10px 14px;border-radius:10px;margin-bottom:10px;
+    background:linear-gradient(100deg,var(--navy) 0%,var(--primary) 72%,var(--accent) 140%);
+    color:#fff;min-height:52px;
+  }
+  #band .t{font-size:15px;font-weight:700;letter-spacing:.01em}
+  #band .s{font-size:11px;opacity:.85;margin-top:2px}
+  #band .meta{font-size:11px;opacity:.9;text-align:right;line-height:1.35}
+  #stage{flex:1;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{
+    position:sticky;top:0;z-index:1;background:var(--head-bg);
+    border-bottom:1px solid var(--line);padding:9px 12px;
+    font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);
+  }
+  thead th.num, td.num{text-align:right;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  thead th.line, td.line{text-align:left}
+  tbody td{padding:8px 12px;border-bottom:1px solid #eef1f5;vertical-align:middle}
+  tr.alt td{background:var(--row)}
+  tr.section td{
+    background:var(--head-bg);font-weight:700;font-size:11px;letter-spacing:.03em;
+    text-transform:uppercase;color:var(--primary);padding-top:11px;padding-bottom:11px;
+  }
+  tr.subtotal td{font-weight:650;border-top:1px solid #d7dce6}
+  tr.total td{
+    background:var(--total-bg);font-weight:750;border-top:2px solid var(--mint);
+    border-bottom:2px solid var(--mint);
+  }
+  tr.total td.line{color:var(--navy)}
+  .indent-1{padding-left:28px !important}
+  .indent-2{padding-left:44px !important}
+  .neg{color:var(--neg)}
+  .pos{color:var(--pos)}
+  .muted{color:var(--muted)}
+  #empty{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:13px;text-align:center;padding:24px;line-height:1.5;
+  }
+  #foot{font-size:10.5px;color:var(--muted);margin-top:7px;display:flex;justify-content:space-between;gap:8px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="band">
+    <div>
+      <div class="t" id="ttl">P&amp;L Statement</div>
+      <div class="s" id="sub">Prior vs Current · contribution bridge</div>
+    </div>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div id="stage"></div>
+  <div id="foot"><span id="foot-l"></span><span id="foot-r">Statement view</span></div>
+</div>
+<script>
+(function () {
+  var client = (window.sigma && window.sigma.plugin && window.sigma.plugin.client)
+    || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
+    || null;
+
+  var defs = [
+    { name: 'source', type: 'element' },
+    { name: 'line', type: 'column', source: 'source', allowMultiple: false, label: 'Line / account' },
+    { name: 'prior', type: 'column', source: 'source', allowMultiple: false, allowedTypes: ['number','integer'], label: 'Prior period' },
+    { name: 'current', type: 'column', source: 'source', allowMultiple: false, allowedTypes: ['number','integer'], label: 'Current period' },
+    { name: 'order', type: 'column', source: 'source', allowMultiple: false, allowedTypes: ['number','integer'], label: 'Sort order (optional)' },
+    { name: 'title', type: 'text', label: 'Title', defaultValue: 'P&L Statement' },
+    { name: 'subtitle', type: 'text', label: 'Subtitle', defaultValue: 'Prior vs Current · statement layout' },
+    { name: 'navy', type: 'text', label: 'Navy hex', defaultValue: '#1A1C3A' },
+    { name: 'primary', type: 'text', label: 'Primary hex', defaultValue: '#4F529B' },
+    { name: 'accent', type: 'text', label: 'Accent hex', defaultValue: '#F58132' },
+    { name: 'siCompact', type: 'toggle', label: 'SI compact currency ($109M)', defaultValue: true }
+  ];
+  if (client) client.config.configureEditorPanel(defs);
+
+  function isArr(x){ return Object.prototype.toString.call(x) === '[object Array]'; }
+  function colKey(cfgVal){
+    if (!cfgVal) return null;
+    if (typeof cfgVal === 'string') return cfgVal;
+    if (isArr(cfgVal)) return cfgVal[0] || null;
+    if (cfgVal.id) return cfgVal.id;
+    if (cfgVal.columnId) return cfgVal.columnId;
+    return null;
+  }
+  function asNum(v){
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    var n = Number(String(v).replace(/[$,\s]/g,'').replace(/\((.*)\)/,'-$1'));
+    return isFinite(n) ? n : null;
+  }
+  function fmtSI(v){
+    if (v == null || isNaN(v)) return '—';
+    var neg = v < 0, a = Math.abs(v), s;
+    if (a >= 1e9) s = (a/1e9).toFixed(2).replace(/\.00$/,'') + 'B';
+    else if (a >= 1e6) s = (a/1e6).toFixed(a >= 1e8 ? 1 : 2).replace(/\.00$/,'') + 'M';
+    else if (a >= 1e3) s = (a/1e3).toFixed(a >= 1e5 ? 0 : 1).replace(/\.0$/,'') + 'K';
+    else s = Math.round(a).toLocaleString('en-US');
+    return (neg ? '-$' : '$') + s;
+  }
+  function fmtFull(v){
+    if (v == null || isNaN(v)) return '—';
+    var neg = v < 0, a = Math.abs(v);
+    var s = a.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return neg ? ('($' + s + ')') : ('$' + s);
+  }
+  function fmtPct(v){
+    if (v == null || isNaN(v) || !isFinite(v)) return '—';
+    var s = (Math.abs(v)*100).toFixed(1) + '%';
+    return (v < 0 ? '↓ ' : v > 0 ? '↑ ' : '') + s;
+  }
+  function classify(name){
+    var n = String(name || '').toLowerCase();
+    if (!n) return 'line';
+    if (/^(revenue|income|expenses?|costs?|other)$/.test(n)) return 'section';
+    if (/(contribution|net income|operating income|gross (profit|margin|contrib)|ebitda|total )/.test(n)) return 'total';
+    if (/(gross after|after .*cost|subtotal)/.test(n)) return 'subtotal';
+    return 'line';
+  }
+  function indentFor(name, kind){
+    if (kind === 'section' || kind === 'total') return 0;
+    if (kind === 'subtotal') return 0;
+    return 1;
+  }
+  function applyTheme(cfg){
+    var r = document.documentElement.style;
+    if (cfg.navy) r.setProperty('--navy', cfg.navy);
+    if (cfg.primary) r.setProperty('--primary', cfg.primary);
+    if (cfg.accent) r.setProperty('--accent', cfg.accent);
+  }
+
+  function rowsFromData(data, cfg){
+    var lk = colKey(cfg.line), pk = colKey(cfg.prior), ck = colKey(cfg.current), ok = colKey(cfg.order);
+    if (!data || !lk || !pk || !ck) return null;
+    var labels = data[lk] || [];
+    var priors = data[pk] || [];
+    var currents = data[ck] || [];
+    var orders = ok ? (data[ok] || []) : null;
+    var n = Math.max(labels.length, priors.length, currents.length);
+    var rows = [];
+    for (var i = 0; i < n; i++){
+      var line = labels[i];
+      if (line == null || line === '') continue;
+      var prior = asNum(priors[i]);
+      var curr = asNum(currents[i]);
+      var ord = orders ? asNum(orders[i]) : i + 1;
+      rows.push({ line: String(line), prior: prior, current: curr, order: ord == null ? i+1 : ord });
+    }
+    rows.sort(function(a,b){ return a.order - b.order; });
+    return rows;
+  }
+
+  function previewRows(){
+    return [
+      { line: 'Net patient revenue', prior: 101100000, current: 109000000, order: 1 },
+      { line: 'Clinical & supply cost', prior: -40100000, current: -42720000, order: 2 },
+      { line: 'Gross after clinical cost', prior: 61000000, current: 66280000, order: 3 },
+      { line: 'Ancillary / medspa fees', prior: 38200000, current: 40720000, order: 4 },
+      { line: 'Cancellations & revisions', prior: -590000, current: -680000, order: 5 },
+      { line: 'Practice overhead', prior: -27400000, current: -29077000, order: 6 },
+      { line: 'Practice contribution', prior: 71210000, current: 77533000, order: 7 }
+    ];
+  }
+
+  function render(rows, cfg, live){
+    applyTheme(cfg || {});
+    document.getElementById('ttl').textContent = (cfg && cfg.title) || 'P&L Statement';
+    document.getElementById('sub').textContent = (cfg && cfg.subtitle) || 'Prior vs Current · statement layout';
+    document.getElementById('meta').innerHTML = live
+      ? (rows.length + ' lines')
+      : ('PREVIEW<br/>' + rows.length + ' sample lines');
+    document.getElementById('foot-l').textContent = live
+      ? 'Bound to workbook source'
+      : 'Configure source · Line · Prior · Current in the editor panel';
+    document.getElementById('foot-r').textContent = (cfg && cfg.siCompact !== false) ? 'SI compact $' : 'Full currency';
+
+    var stage = document.getElementById('stage');
+    if (!rows || !rows.length){
+      stage.innerHTML = '<div id="empty">Select a source table and map<br/><b>Line</b>, <b>Prior</b>, and <b>Current</b> columns.</div>';
+      return;
+    }
+
+    var si = !cfg || cfg.siCompact !== false;
+    var money = si ? fmtSI : fmtFull;
+    var html = ['<table><thead><tr>',
+      '<th class="line">Line</th>',
+      '<th class="num">Prior</th>',
+      '<th class="num">Current</th>',
+      '<th class="num">Δ</th>',
+      '<th class="num">Δ %</th>',
+      '</tr></thead><tbody>'];
+
+    var alt = false;
+    rows.forEach(function(r){
+      var kind = classify(r.line);
+      var ind = indentFor(r.line, kind);
+      var delta = (r.current != null && r.prior != null) ? (r.current - r.prior) : null;
+      var pct = (delta != null && r.prior) ? (delta / Math.abs(r.prior)) : null;
+      var cls = kind;
+      if (kind === 'line') { cls += alt ? ' alt' : ''; alt = !alt; }
+      else alt = false;
+      var dCls = delta == null ? 'muted' : (delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'muted'));
+      var pCls = pct == null ? 'muted' : (pct < 0 ? 'neg' : (pct > 0 ? 'pos' : 'muted'));
+      html.push('<tr class="'+cls+'">');
+      html.push('<td class="line'+(ind?(' indent-'+ind):'')+'">'+escapeHtml(r.line)+'</td>');
+      html.push('<td class="num">'+(r.prior==null?'—':money(r.prior))+'</td>');
+      html.push('<td class="num">'+(r.current==null?'—':money(r.current))+'</td>');
+      html.push('<td class="num '+dCls+'">'+(delta==null?'—':money(delta))+'</td>');
+      html.push('<td class="num '+pCls+'">'+(pct==null?'—':fmtPct(pct))+'</td>');
+      html.push('</tr>');
+    });
+    html.push('</tbody></table>');
+    stage.innerHTML = html.join('');
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]);
+    });
+  }
+
+  function paint(cfg){
+    cfg = cfg || {};
+    if (!client){ render(previewRows(), cfg, false); return; }
+    var src = cfg.source;
+    if (!src || !colKey(cfg.line) || !colKey(cfg.prior) || !colKey(cfg.current)){
+      render(previewRows(), cfg, false);
+      return;
+    }
+    try {
+      client.elements.getElementData(src).then(function(data){
+        var rows = rowsFromData(data || {}, cfg);
+        if (!rows || !rows.length) render(previewRows(), cfg, false);
+        else render(rows, cfg, true);
+      }).catch(function(){ render(previewRows(), cfg, false); });
+    } catch (e) {
+      render(previewRows(), cfg, false);
+    }
+  }
+
+  if (client) {
+    client.config.subscribe(paint);
+    try { client.config.getConfig().then(paint); } catch (e) { paint({}); }
+  } else {
+    paint({});
+  }
+})();
+</script>
+</body>
+</html>
