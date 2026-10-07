@@ -118,15 +118,52 @@
   ];
   if (client) client.config.configureEditorPanel(defs);
 
-  var state = { cfg: {}, rows: [], live: false, selected: null, unsub: null };
+  var state = { cfg: {}, rows: [], live: false, selected: null, unsub: null, unsubCols: null, cols: {} };
 
   function isArr(x){ return Object.prototype.toString.call(x) === '[object Array]'; }
+  function sourceId(src){
+    if (!src) return null;
+    if (typeof src === 'string') return src;
+    if (typeof src === 'object') return src.elementId || src.id || src.nodeId || src.sourceId || null;
+    return null;
+  }
   function colKey(cfgVal){
-    if (!cfgVal) return null;
-    if (typeof cfgVal === 'string') return cfgVal;
-    if (isArr(cfgVal)) return cfgVal[0] || null;
-    if (cfgVal.id) return cfgVal.id;
-    if (cfgVal.columnId) return cfgVal.columnId;
+    if (cfgVal == null || cfgVal === '') return null;
+    if (typeof cfgVal === 'string' || typeof cfgVal === 'number') return String(cfgVal);
+    if (isArr(cfgVal)) return colKey(cfgVal[0]);
+    if (typeof cfgVal === 'object'){
+      if (cfgVal.columnId != null) return String(cfgVal.columnId);
+      if (cfgVal.id != null) return String(cfgVal.id);
+    }
+    return null;
+  }
+  function colMetaName(id){
+    var m = state.cols && state.cols[id];
+    return (m && (m.name || m.label)) || '';
+  }
+  function findCol(data, want, aliases){
+    if (!data || !want) return null;
+    if (data[want] && data[want].length) return want;
+    var wantL = String(want).toLowerCase();
+    var id, n, i, nm;
+    for (id in (state.cols || {})){
+      n = String((state.cols[id] && (state.cols[id].name || state.cols[id].label)) || '').toLowerCase();
+      if (n === wantL && data[id] && data[id].length) return id;
+    }
+    for (id in data){
+      if (!data[id] || !data[id].length) continue;
+      nm = String(colMetaName(id) || id).toLowerCase();
+      if (nm === wantL) return id;
+    }
+    if (aliases && aliases.length){
+      for (id in data){
+        if (!data[id] || !data[id].length) continue;
+        nm = String(colMetaName(id) || id).toLowerCase();
+        for (i = 0; i < aliases.length; i++){
+          if (nm === aliases[i] || nm.indexOf(aliases[i]) >= 0) return id;
+        }
+      }
+    }
     return null;
   }
   function asNum(v){
@@ -180,9 +217,21 @@
   }
 
   function rowsFromData(data, cfg){
-    var lk = colKey(cfg.line), pk = colKey(cfg.prior), ck = colKey(cfg.current);
-    var ok = colKey(cfg.order), sk = colKey(cfg.section), rk = colKey(cfg.rowKind);
-    if (!data || !lk || !pk || !ck) return null;
+    if (!data) return null;
+    var lk = findCol(data, colKey(cfg.line), ['line', 'account', 'p&l line']);
+    var pk = findCol(data, colKey(cfg.prior), ['prior ttm', 'prior', 'prior period']);
+    var ck = findCol(data, colKey(cfg.current), ['current ttm', 'current', 'current period']);
+    var ok = findCol(data, colKey(cfg.order), ['line order', 'order', 'ord']);
+    var sk = findCol(data, colKey(cfg.section), ['section']);
+    var rk = findCol(data, colKey(cfg.rowKind), ['row kind', 'kind']);
+    if (!lk || !pk || !ck) {
+      console.warn('[pnl-stmt] unresolved columns', {
+        want: { line: colKey(cfg.line), prior: colKey(cfg.prior), current: colKey(cfg.current) },
+        keys: Object.keys(data || {}),
+        names: Object.keys(state.cols || {}).map(function(id){ return id + '=' + colMetaName(id); })
+      });
+      return null;
+    }
     var labels = data[lk] || [];
     var priors = data[pk] || [];
     var currents = data[ck] || [];
@@ -318,31 +367,66 @@
     });
   }
 
+  function showWaiting(cfg, msg){
+    applyTheme(cfg || {});
+    document.getElementById('entity').textContent = (cfg && cfg.entity) || 'Practice';
+    document.getElementById('ttl').textContent = (cfg && cfg.title) || 'Consolidated Statement of Operations';
+    document.getElementById('sub').textContent = (cfg && cfg.subtitle) || 'Prior TTM vs Current TTM · live filtered';
+    document.getElementById('meta').innerHTML = '<b>LIVE</b><br/>waiting for source';
+    document.getElementById('foot-l').textContent = msg || 'Waiting for workbook data…';
+    document.getElementById('foot-r').textContent = 'Not sample data';
+    document.getElementById('stage').innerHTML =
+      '<div id="empty">' + (msg || 'Waiting for workbook source data…') + '</div>';
+    state.live = false;
+    state.rows = [];
+  }
+
   function ingest(data, cfg){
     var rows = rowsFromData(data || {}, cfg);
-    if (!rows || !rows.length) render(previewRows(), cfg, false);
-    else render(rows, cfg, true);
+    if (!rows || !rows.length){
+      // Bound source but empty/unresolved — NEVER silently show sample preview.
+      showWaiting(cfg, 'Source bound but no rows yet (check column map / filters).');
+      return;
+    }
+    render(rows, cfg, true);
   }
 
   function bindSource(cfg){
     if (state.unsub) { try { state.unsub(); } catch (e) {} state.unsub = null; }
+    if (state.unsubCols) { try { state.unsubCols(); } catch (e) {} state.unsubCols = null; }
     cfg = cfg || {};
     state.cfg = cfg;
     if (!client){ render(previewRows(), cfg, false); return; }
-    var src = cfg.source;
-    if (!src || !colKey(cfg.line) || !colKey(cfg.prior) || !colKey(cfg.current)){
+    var sid = sourceId(cfg.source);
+    if (!sid || !colKey(cfg.line) || !colKey(cfg.prior) || !colKey(cfg.current)){
+      // Editor / unbound only
       render(previewRows(), cfg, false);
       return;
     }
+    showWaiting(cfg, 'Loading statement from workbook…');
     try {
-      // Live updates when workbook filters change the source element
-      state.unsub = client.elements.subscribeToElementData(src, function(data){
+      if (client.elements.subscribeToElementColumns){
+        state.unsubCols = client.elements.subscribeToElementColumns(sid, function(cols){
+          state.cols = cols || {};
+        });
+      }
+      if (client.elements.getElementColumns){
+        try {
+          var colsP = client.elements.getElementColumns(sid);
+          if (colsP && colsP.then) colsP.then(function(cols){ state.cols = cols || {}; }).catch(function(){});
+        } catch (e0) {}
+      }
+      state.unsub = client.elements.subscribeToElementData(sid, function(data){
         ingest(data, cfg);
       });
-      client.elements.getElementData(src).then(function(data){ ingest(data, cfg); })
-        .catch(function(){ render(previewRows(), cfg, false); });
+      client.elements.getElementData(sid).then(function(data){ ingest(data, cfg); })
+        .catch(function(err){
+          console.error('[pnl-stmt] getElementData failed', err);
+          showWaiting(cfg, 'Could not read source element. Is it on this page?');
+        });
     } catch (e) {
-      render(previewRows(), cfg, false);
+      console.error('[pnl-stmt] bind failed', e);
+      showWaiting(cfg, 'Plugin bind failed — see console.');
     }
   }
 
