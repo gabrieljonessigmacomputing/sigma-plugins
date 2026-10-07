@@ -1,40 +1,17 @@
-# Sigma P&L Statement Plugin
+# P&L Statement plugin (FP&A)
 
-A **real P&L statement** tile for Sigma — spreadsheet/FP&A layout, not a
-decomposition tree and not a blank waterfall.
+Statement-of-operations layout for Sigma — **not** a metric decomposition tree.
 
-## What it renders
+## Hosted URL
+https://gabrieljonessigmacomputing.github.io/sigma-plugins/pnl-statement/
 
-| Line | Prior | Current | Δ | Δ % |
-|------|-------|---------|---|-----|
-| Net revenue | … | … | … | … |
-| … | | | | |
-| **Contribution** | … | … | … | … |
+## Bindings
+| Config | Column | Ascend example |
+|--------|--------|----------------|
+| Line / account | text | `ps1` |
+| Prior period | number | `ps2` |
+| Current period | number | `ps3` |
+| Sort order | number | `ps0` |
 
-- Statement rows with section / subtotal / total styling
-- SI compact currency (`$109M`) or full accounting format
-- Brandable navy / primary / accent
-
-## Editor panel
-
-| Config | Role |
-|--------|------|
-| `source` | Table / element |
-| `line` | Account / P&L line name |
-| `prior` | Prior period amount |
-| `current` | Current period amount |
-| `order` | Optional sort key |
-| `title` / `subtitle` | Header copy |
-| `navy` / `primary` / `accent` | Brand hexes |
-| `siCompact` | SI `$` vs full currency |
-
-## Host
-
-GitHub Pages:
-`https://gabrieljonessigmacomputing.github.io/sigma-pnl-statement-plugin/`
-
-## Register (papercrane)
-
-```bash
-# via sigmaapi.register_plugin("P&L Statement", url, "Statement-style P&L")
-```
+## Plugin ID (papercrane)
+`d8499e61-f9ce-4b59-a7e0-5237caaf05f0`
