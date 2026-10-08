@@ -30,7 +30,9 @@
   export needs the page to go idle. Resize is observed on the stage element,
   not the window (the iframe is resized without a window resize event).
 -->
-<script src="https://unpkg.com/@sigmacomputing/plugin"></script>
+<!-- SDK UMD needs window.React at load (createContext) and exports window.SigmaPlugin. -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/@sigmacomputing/plugin@1.3.2/dist/umd/sigmacomputing-plugin.umd.js"></script>
 <style>
   /* Brand palette sampled from supplyhouse.com */
   :root{
@@ -410,9 +412,16 @@
   }
 
   /* ------------------------------------------------------------------ wire */
-  var LAST = synth();
-  var client = (window.sigmaComputing && window.sigmaComputing.plugin)
-             ? window.sigmaComputing.plugin.client : null;
+  var LAST = null;   // set from workbook data; synthetic only when no source is bound
+  /* aging-heatmap v3 — SDK 1.x UMD exports window.SigmaPlugin */
+  var client = (window.SigmaPlugin && window.SigmaPlugin.client) ||
+               ((window.sigmaComputing && window.sigmaComputing.plugin)
+                 ? window.sigmaComputing.plugin.client : null);
+  function drawWaiting(msg) {
+    stage.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;' +
+      'color:#6b7280;font:13px/1.5 system-ui,sans-serif;text-align:center;padding:24px">' +
+      esc(msg || "Waiting for workbook data…") + '</div>';
+  }
 
   if (client) {
     client.config.configureEditorPanel([
@@ -446,12 +455,14 @@
     var unsubData = null, unsubCols = null, COLS = null, CFG = null;
 
     function rebuild(data) {
-      if (!CFG) { draw(LAST); return; }
+      if (!CFG) { if (LAST) draw(LAST); else drawWaiting(); return; }
       if (CFG.debug) { debugDump(data); return; }
       var m = null;
       if (CFG.value && CFG.dc && CFG.bucket) m = fromLong(data, COLS, CFG);
       if (!m && CFG.dc)                      m = fromWide(data, COLS, CFG);
-      LAST = m || synth();
+      // Bound source: never fall back to synthetic data.
+      if (!m) { LAST = null; drawWaiting("Waiting for workbook data…"); return; }
+      LAST = m;
       draw(LAST);
     }
 
@@ -501,6 +512,7 @@
       if (dc) el.classList.add("sel");
     });
 
+    var bindKey = null;
     client.config.subscribe(function (cfg) {
       CFG = cfg || {};
       DBG.cfgCalls++;
@@ -510,6 +522,14 @@
       OPTS.agedFrom = isFinite(af) && af > 0 ? af : 90;
       OPTS.sort = CFG.sort || "aged";
 
+      // Sigma re-delivers config right after init. Re-subscribing to the same
+      // source drops the data feed (columns re-sent, data not) -> keep it.
+      var key = JSON.stringify([CFG.source, CFG.dc, CFG.bucket, CFG.value, CFG.bucketOrder, CFG.wideValues]);
+      if (unsubData && key === bindKey) {
+        if (DBG.lastData) rebuild(DBG.lastData);
+        return;
+      }
+      bindKey = key;
       if (unsubData) { unsubData(); unsubData = null; }
       if (unsubCols) { unsubCols(); unsubCols = null; }
       if (!CFG.source) {
@@ -517,6 +537,7 @@
         LAST = synth(); draw(LAST); return;
       }
       if (CFG.debug) debugDump(DBG.lastData);
+      else drawWaiting("Loading inventory aging from workbook…");
 
       unsubCols = client.elements.subscribeToElementColumns(CFG.source, function (columns) {
         COLS = columns; DBG.colCalls++;
@@ -539,10 +560,12 @@
       var w = stage.clientWidth, h = stage.clientHeight;
       if (w === lastW && h === lastH) return;
       lastW = w; lastH = h;
-      draw(LAST);
+      if (LAST) draw(LAST);
     }).observe(stage);
   }
-  draw(LAST);
+  if (LAST) draw(LAST);
+  else if (client) drawWaiting();
+  else { LAST = synth(); draw(LAST); }
 })();
 </script>
 </body>
