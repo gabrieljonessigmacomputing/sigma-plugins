@@ -221,6 +221,8 @@
   // id from the config, but don't assume it: fall back to a prefix match on
   // the id and then to the column's display name.
   function key(data, cols, want) {
+    // typed spec binding {kind:"column", columnId} -> bare runtime id
+    if (want && typeof want === "object") want = want.columnId || (want.columnIds && want.columnIds[0]) || null;
     if (!want || !data) return null;
     if (Object.prototype.hasOwnProperty.call(data, want)) return want;
     var ks = Object.keys(data), i;
