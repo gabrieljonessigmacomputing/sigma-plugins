@@ -144,6 +144,11 @@
   var saveTimer = null;
   var variableId = null;
   var ignoreBlur = false;
+  var bindings = {};
+  var pendingLog = null;
+  var logQueue = Promise.resolve();
+  var userEdited = false;
+  var INPUT_KEYS = ["od", "res", "nodes", "cost", "deposit", "capex", "premium", "slurm", "inf", "orch", "rdisc", "rslurm", "rinf", "rorch", "gpus", "hours"];
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -319,7 +324,7 @@
       + kpi("Gross profit", tot.gp, "all-in, forecast months")
       + kpi("Margin", tot.margin == null ? null : tot.margin * 100, "gross profit ÷ revenue", true)
       + "</div>";
-    html += '<div class="note"><span class="dot">Blue</span> cells are what he types. Price = cost × (1 + premium). Revenue = hours × price, with Slurm, inference and orchestration on top. Gross profit (all-in) is revenue minus cost on every committed hour, idle included. Cash deposit and capex stay on the sheet and out of that profit, which is how his totals tie. The heavy line is September: actuals on the left, forecast on the right. Massed Compute is his file. Alibaba and GCore are starter tabs.</div>';
+    html += '<div class="note"><span class="dot">Blue</span> cells are what he types. Price = cost × (1 + premium). Revenue = hours × price, with Slurm, inference and orchestration on top. Gross profit (all-in) is revenue minus cost on every committed hour, idle included. Cash deposit and capex stay on the sheet and out of that profit. Each edit is appended to the forecast log under the grid. The heavy line is September. Massed Compute is his file. Alibaba and GCore are starter tabs.</div>';
     html += '<div class="sheet"><table><thead><tr><th class="lab"></th>';
     MONTHS.forEach(function (ym) {
       var fc = ym > ACTUAL_LAST;
@@ -364,11 +369,76 @@
   }
   function esc(s) { return String(s).replace(/"/g, "&quot;"); }
 
-  function scheduleSave() {
+  function refId(v) {
+    if (!v) return null;
+    if (typeof v === "string") return v;
+    return v.controlId || v.columnId || v.elementId || v.actionTriggerId || v.id || null;
+  }
+
+  function setControl(key, value) {
+    var id = refId(key === "view" ? bindings.view : bindings["c_" + key]);
+    if (!id || !client || !client.config || !client.config.setVariable) return Promise.resolve();
+    return Promise.resolve(client.config.setVariable(id, String(value)));
+  }
+
+  function writeOne(contractId, ym) {
+    var m = state[contractId] && state[contractId].months[ym];
+    if (!m) return Promise.resolve();
+    var pairs = { contract: contractId, month: ym };
+    INPUT_KEYS.forEach(function (k) { pairs[k] = m[k]; });
+    var seq = Promise.resolve();
+    Object.keys(pairs).forEach(function (k) {
+      seq = seq.then(function () { return setControl(k, pairs[k]); });
+    });
+    return seq.then(function () {
+      var trigger = refId(bindings.onSave);
+      if (trigger && client.config.triggerAction) return client.config.triggerAction(trigger);
+    });
+  }
+
+  function enqueueLog(contractId, ym) {
+    if (!client) return;
+    logQueue = logQueue.then(function () { return writeOne(contractId, ym); }).then(function () {
+      saveNote = "Logged";
+      var meta = document.querySelector(".meta div:nth-child(2)");
+      if (meta && !document.querySelector("input.cell")) meta.textContent = saveNote;
+    }, function () {
+      saveNote = "On screen; the log did not take that edit";
+      var meta = document.querySelector(".meta div:nth-child(2)");
+      if (meta) meta.textContent = saveNote;
+    });
+  }
+
+  function applySaved(data) {
+    if (userEdited || !data) return;
+    var contracts = data[refId(bindings.d_contract)];
+    var months = data[refId(bindings.d_month)];
+    if (!contracts || !contracts.length || !months) return;
+    var next = clone(SEED);
+    for (var i = 0; i < contracts.length; i++) {
+      var cid = contracts[i], ym = months[i];
+      if (!next[cid] || !next[cid].months[ym]) continue;
+      INPUT_KEYS.forEach(function (k) {
+        var arr = data[refId(bindings["d_" + k])];
+        if (!arr) return;
+        var n = Number(arr[i]);
+        if (isFinite(n)) next[cid].months[ym][k] = n;
+      });
+    }
+    if (userEdited) return;
+    state = next;
+    render();
+  }
+
+  function scheduleSave(contractId, ym) {
     if (!client) { saveNote = "In this browser only"; return; }
+    if (contractId && ym) pendingLog = { contract: contractId, month: ym };
     clearTimeout(saveTimer);
     saveNote = "Saving…";
-    saveTimer = setTimeout(writeVariable, 350);
+    saveTimer = setTimeout(function () {
+      writeVariable();
+      if (pendingLog) enqueueLog(pendingLog.contract, pendingLog.month);
+    }, 350);
   }
 
   function boundId(cfg) {
@@ -419,11 +489,19 @@
 
   document.getElementById("app").addEventListener("click", function (ev) {
     var tab = ev.target.closest("[data-tab]");
-    if (tab) { active = tab.getAttribute("data-tab"); editing = null; render(); return; }
+    if (tab) {
+      active = tab.getAttribute("data-tab");
+      editing = null;
+      setControl("view", active);
+      render();
+      return;
+    }
     if (ev.target.id === "reset") {
+      userEdited = true;
       state[active] = clone(SEED[active]);
       editing = null;
-      scheduleSave();
+      writeVariable();
+      MONTHS.forEach(function (ym) { enqueueLog(active, ym); });
       render();
       return;
     }
@@ -445,18 +523,34 @@
     var ym = ev.target.getAttribute("data-month");
     var row = ROWS.filter(function (r) { return r.id === rowId; })[0];
     if (row) applyEdit(state[active].months[ym], row, ev.target.value);
+    userEdited = true;
     editing = null;
-    scheduleSave();
+    scheduleSave(active, ym);
     render();
   });
 
   if (client) {
     try {
-      client.config.configureEditorPanel([
-        { name: "model", type: "variable", label: "Forecast model", allowedTypes: ["text"] }
-      ]);
+      var panel = [
+        { name: "model", type: "variable", label: "Forecast model", allowedTypes: ["text"] },
+        { name: "view", type: "variable", label: "Contract on screen", allowedTypes: ["text"] },
+        { name: "onSave", type: "action-trigger", label: "Append forecast log" },
+        { name: "saved", type: "element" }
+      ];
+      ["contract", "month"].concat(INPUT_KEYS).forEach(function (k) {
+        panel.push({ name: "c_" + k, type: "variable", label: "Write " + k, allowedTypes: ["text"] });
+        panel.push({ name: "d_" + k, type: "column", source: "saved", label: "Read " + k });
+      });
+      client.config.configureEditorPanel(panel);
     } catch (e) {}
+    var wiredSaved = null;
     client.config.subscribe(function (cfg) {
+      bindings = cfg || {};
+      var saved = refId(bindings.saved);
+      if (saved && saved !== wiredSaved && client.elements && client.elements.subscribeToElementData) {
+        wiredSaved = saved;
+        try { client.elements.subscribeToElementData(saved, applySaved); } catch (e) {}
+      }
       var id = boundId(cfg);
       if (!id || id === variableId) return;
       variableId = id;
