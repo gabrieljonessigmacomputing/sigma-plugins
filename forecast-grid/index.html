@@ -13,9 +13,9 @@
     --green:#248a3d; --tab:#ececef; --split:#1c1c1e; --muted:#6e6e73;
   }
   * { box-sizing:border-box; }
-  html, body { height:100%; margin:0; background:transparent; color:var(--ink);
+  html, body { height:100%; margin:0; background:#fff; color:var(--ink);
     font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-  #app { height:100%; display:flex; flex-direction:column; padding:8px 10px 6px; gap:8px; }
+  #app { height:100%; display:flex; flex-direction:column; padding:8px 10px 6px; gap:6px; background:#fff; }
   .top { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
   .tabs { display:flex; gap:6px; align-items:flex-end; }
   .tab { border:0; background:var(--tab); color:#3a3a3c; border-radius:8px 8px 0 0;
@@ -33,13 +33,14 @@
   .sheet { flex:1; min-height:0; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--paper); }
   table { border-collapse:separate; border-spacing:0; font-size:12px; font-variant-numeric:tabular-nums; }
   th, td { border-bottom:1px solid var(--line); border-right:1px solid #f0f0f3; padding:0; height:26px; white-space:nowrap; }
-  th.lab, td.lab { position:sticky; left:0; z-index:2; background:#fff; text-align:left; min-width:248px;
-    padding:0 10px; font-weight:500; border-right:1px solid #d9d9e0; }
+  th.lab, td.lab { position:sticky; left:0; z-index:2; background:#fff; text-align:left; min-width:220px; max-width:220px;
+    padding:0 8px; font-weight:500; border-right:1px solid #d9d9e0; }
   thead th { position:sticky; top:0; z-index:3; background:var(--purple); color:#fff; font-weight:650; font-size:11px; height:28px; }
   thead th.lab { z-index:4; background:#2c2c2e; color:#fff; }
   thead th.fc { background:var(--purple-2); }
   thead th.split, td.split { box-shadow:inset 3px 0 0 var(--split); }
-  td.num { text-align:right; min-width:84px; padding:0 8px; color:var(--ink); }
+  td.num { text-align:right; min-width:72px; width:72px; padding:0 6px; color:var(--ink); font-size:11px; }
+  thead th { min-width:72px; }
   td.in { color:var(--blue); background:var(--inputbg); cursor:text; font-weight:600; }
   td.in:hover { outline:1px solid #c5cdf5; outline-offset:-1px; }
   td.strong { font-weight:700; }
