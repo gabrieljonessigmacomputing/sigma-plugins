@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>excel_forecast</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/@sigmacomputing/plugin@1.3.2/dist/umd/sigmacomputing-plugin.umd.js"></script>
+<style>
+  :root {
+    --ink:#1c1c1e; --blue:#2a3db5; --purple:#4c3fbf; --purple-2:#6a4adf;
+    --line:#e4e4ea; --paper:#fff; --section:#f4f4f7; --inputbg:#f7f8ff;
+    --green:#248a3d; --tab:#ececef; --split:#1c1c1e; --muted:#6e6e73;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; background:transparent; color:var(--ink);
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  #app { height:100%; display:flex; flex-direction:column; padding:8px 10px 6px; gap:8px; }
+  .top { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
+  .tabs { display:flex; gap:6px; align-items:flex-end; }
+  .tab { border:0; background:var(--tab); color:#3a3a3c; border-radius:8px 8px 0 0;
+    padding:6px 14px 7px; font-size:13px; font-weight:600; cursor:pointer; }
+  .tab.on { background:var(--green); color:#fff; }
+  .meta { text-align:right; font-size:11px; color:var(--muted); line-height:1.35; }
+  .meta b { color:var(--ink); font-weight:650; }
+  .kpis { display:flex; gap:8px; }
+  .kpi { background:#f6f6f8; border:1px solid var(--line); border-radius:8px; padding:6px 10px 7px; min-width:128px; }
+  .kpi .l { font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .kpi .v { font-size:16px; font-weight:680; font-variant-numeric:tabular-nums; margin-top:1px; }
+  .kpi .v.neg { color:#9f1239; }
+  .note { font-size:11px; color:var(--muted); }
+  .note .dot { color:var(--blue); font-weight:700; }
+  .sheet { flex:1; min-height:0; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--paper); }
+  table { border-collapse:separate; border-spacing:0; font-size:12px; font-variant-numeric:tabular-nums; }
+  th, td { border-bottom:1px solid var(--line); border-right:1px solid #f0f0f3; padding:0; height:26px; white-space:nowrap; }
+  th.lab, td.lab { position:sticky; left:0; z-index:2; background:#fff; text-align:left; min-width:248px;
+    padding:0 10px; font-weight:500; border-right:1px solid #d9d9e0; }
+  thead th { position:sticky; top:0; z-index:3; background:var(--purple); color:#fff; font-weight:650; font-size:11px; height:28px; }
+  thead th.lab { z-index:4; background:#2c2c2e; color:#fff; }
+  thead th.fc { background:var(--purple-2); }
+  thead th.split, td.split { box-shadow:inset 3px 0 0 var(--split); }
+  td.num { text-align:right; min-width:84px; padding:0 8px; color:var(--ink); }
+  td.in { color:var(--blue); background:var(--inputbg); cursor:text; font-weight:600; }
+  td.in:hover { outline:1px solid #c5cdf5; outline-offset:-1px; }
+  td.strong { font-weight:700; }
+  td.sec { background:var(--section); font-weight:700; color:var(--ink); }
+  tr.gap td { height:8px; background:#fafafa; border-bottom:0; }
+  td.neg { color:#1c1c1e; }
+  input.cell { width:100%; height:26px; border:2px solid var(--green); margin:0; padding:0 6px;
+    text-align:right; font:inherit; font-weight:650; color:var(--blue); background:#fff; outline:none; }
+  button.link { border:0; background:none; color:var(--muted); font-size:11px; cursor:pointer; padding:0; text-decoration:underline; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function () {
+  var client = (window.SigmaPlugin && window.SigmaPlugin.client)
+    || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client);
+
+  var MONTHS = [];
+  for (var i = 0; i < 15; i++) {
+    var d = new Date(2026, 3 + i, 1);
+    MONTHS.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
+  }
+  var ACTUAL_LAST = "2026-09";
+
+  function label(ym) {
+    var p = ym.split("-");
+    return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+p[1] - 1] + "-" + p[0].slice(2);
+  }
+
+  function monthInput(partial) {
+    var base = {
+      od: 90, res: 0, nodes: 8, cost: 1.85, deposit: -64824, capex: -64824,
+      premium: 73, slurm: 0, inf: 0, orch: 0, rdisc: 10, rslurm: 0, rinf: 0, rorch: 0,
+      gpus: 8, hours: 730
+    };
+    var o = {};
+    Object.keys(base).forEach(function (k) { o[k] = base[k]; });
+    Object.keys(partial || {}).forEach(function (k) { o[k] = partial[k]; });
+    return o;
+  }
+
+  function series(spec) {
+    var out = {};
+    MONTHS.forEach(function (ym, i) {
+      var row = {};
+      Object.keys(spec).forEach(function (k) {
+        row[k] = Array.isArray(spec[k]) ? spec[k][i] : spec[k];
+      });
+      out[ym] = monthInput(row);
+    });
+    return out;
+  }
+
+  /* Massed Compute is transcribed from excel_forecast on the Oct 21 working session.
+     Premium, mix, nodes, cost, deposit and capex are his inputs. Price, hours,
+     revenue and profit are calculated the way that sheet calculates them. */
+  var MASSED_OD = [0, 76, 100, 93, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90];
+  var MASSED_PREM = [35, 34, 33, 35, 63, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73];
+  var MASSED_SLURM = [0, 0, 0, 0, 0, 1, 1, 3, 4, 5, 5, 5, 5, 5, 5];
+  var MASSED_INF = [0, 0, 0, 0, 0, 0, 3, 4, 5, 5, 5, 5, 5, 5, 5];
+  var MASSED_ORCH = [0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 8, 10, 10, 10, 10];
+  var MASSED_HOURS = MONTHS.map(function (_, i) { return i === 0 ? 608.328125 : 730; });
+  var MASSED_DISC = MONTHS.map(function (_, i) { return i >= 5 ? 10 : 0; });
+
+  var SEED = {
+    massed: {
+      name: "Massed Compute",
+      title: "Massed Compute (18 mo Contract) - H100",
+      months: series({
+        od: MASSED_OD, premium: MASSED_PREM, slurm: MASSED_SLURM, inf: MASSED_INF, orch: MASSED_ORCH,
+        rslurm: MASSED_SLURM, rinf: MASSED_INF, rorch: MASSED_ORCH, rdisc: MASSED_DISC, hours: MASSED_HOURS,
+        deposit: MONTHS.map(function (_, i) { return i === 0 ? -989944 : -64824; }),
+        capex: MONTHS.map(function (_, i) { return i === 0 ? -54020 : -64824; })
+      })
+    },
+    alibaba: {
+      name: "Alibaba",
+      title: "Alibaba (Contract) - H200",
+      months: series({
+        od: 70, res: 10, nodes: 4, cost: 2.40, premium: 40, gpus: 8,
+        deposit: -42000, capex: -18000, rdisc: 12, slurm: 2, inf: 4, orch: 3, rslurm: 2, rinf: 4, rorch: 3
+      })
+    },
+    gcore: {
+      name: "GCore",
+      title: "GCore (Contract) - H100",
+      months: series({
+        od: 85, res: 5, nodes: 6, cost: 1.70, premium: 55, gpus: 8,
+        deposit: -36000, capex: -12000, rdisc: 8, slurm: 1, inf: 2, orch: 2, rslurm: 1, rinf: 2, rorch: 2
+      })
+    }
+  };
+
+  var ORDER = ["massed", "alibaba", "gcore"];
+  var active = "massed";
+  var editing = null;
+  var state = null;
+  var lastWritten = "";
+  var saveNote = "";
+  var saveTimer = null;
+  var variableId = null;
+  var ignoreBlur = false;
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  function calc(m) {
+    var od = m.od / 100, res = m.res / 100;
+    var committed = m.nodes * m.gpus * m.hours;
+    var odHours = committed * od;
+    var resHours = committed * res;
+    var utilized = odHours + resHours;
+    var odPrice = m.cost * (1 + m.premium / 100);
+    var odTotal = odPrice * (1 + (m.slurm + m.inf + m.orch) / 100);
+    var showRes = m.rdisc > 0 || res > 0;
+    var resPrice = showRes ? odPrice * (1 - m.rdisc / 100) : 0;
+    var resTotal = resPrice * (1 + (m.rslurm + m.rinf + m.rorch) / 100);
+    var odRev = odHours * odTotal;
+    var resRev = resHours * resTotal;
+    var rev = odRev + resRev;
+    return {
+      idle: Math.max(0, 100 - m.od - m.res),
+      committed: committed, utilized: utilized,
+      odPrice: odPrice, odTotal: odTotal, odRev: odRev,
+      resPrice: resPrice, resTotal: resTotal, resRev: resRev, showRes: showRes,
+      wprice: utilized > 0.5 ? rev / utilized : odTotal,
+      gp: rev - m.cost * committed,
+      gpu: rev - m.cost * utilized,
+      margin: Math.abs(rev) >= 1 ? (rev - m.cost * committed) / rev : null
+    };
+  }
+
+  function comma(n, d) {
+    var s = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    return n < -0.5 ? "(" + s + ")" : s;
+  }
+  function fmtPct(n) {
+    if (n == null || !isFinite(n)) return "–";
+    var v = Math.abs(n - Math.round(n)) < 0.05 ? Math.round(n) : Math.round(n * 10) / 10;
+    return (n < 0 ? "(" + Math.abs(v) + "%)" : v + "%");
+  }
+  function fmtUsd(n) {
+    if (!isFinite(n)) return "–";
+    return (n < -0.005 ? "(" : "") + "$" + comma(Math.abs(n) < 0.005 ? 0 : n, 2).replace(/[()]/g, "") + (n < -0.005 ? ")" : "");
+  }
+  function fmtAcct(n) {
+    if (!isFinite(n)) return "–";
+    if (Math.abs(n) < 0.5) return "–";
+    return comma(n, 0);
+  }
+  function fmtHrs(n) { return comma(n, 0); }
+
+  var ROWS = [
+    { id: "od", label: "On-demand", input: "pct" },
+    { id: "res", label: "Reserve", input: "pct" },
+    { id: "idle", label: "Idle", input: "pct" },
+    { id: "title", section: true },
+    { id: "nodes", label: "Nodes", input: "num" },
+    { id: "cost", label: "Cost per Hour", input: "usd" },
+    { id: "deposit", label: "Cash Deposit", input: "acct" },
+    { id: "capex", label: "Capex Cost", input: "acct" },
+    { id: "g1", gap: true },
+    { id: "committed", label: "Committed GPU hours", out: "hrs" },
+    { id: "utilized", label: "Utilized GPU hours", out: "hrs" },
+    { id: "g2", gap: true },
+    { id: "premium", label: "On-demand Premium vs. Cost", input: "pct" },
+    { id: "odPrice", label: "On-demand Price per Hour", out: "usd" },
+    { id: "slurm", label: "Managed Slurm and Kubernetes", input: "pct" },
+    { id: "inf", label: "Inference", input: "pct" },
+    { id: "orch", label: "Multicloud Orchestration", input: "pct" },
+    { id: "odTotal", label: "Total On-demand Price per Hour", out: "usd", strong: true },
+    { id: "odRev", label: "On-demand Revenue", out: "acct", strong: true },
+    { id: "g3", gap: true },
+    { id: "rdisc", label: "Reserve Discount vs. On-demand", input: "pct" },
+    { id: "resPrice", label: "Reserve Price per Hour", out: "usd" },
+    { id: "rslurm", label: "Managed Slurm and Kubernetes", input: "pct" },
+    { id: "rinf", label: "Inference", input: "pct" },
+    { id: "rorch", label: "Multicloud Orchestration", input: "pct" },
+    { id: "resTotal", label: "Total Reserve Price per Hour", out: "usd", strong: true },
+    { id: "resRev", label: "Reserve Revenue", out: "acct", strong: true },
+    { id: "g4", gap: true },
+    { id: "wprice", label: "Weighted Price", out: "usd", strong: true },
+    { id: "gp", label: "Gross Profit (all-in)", out: "acct", strong: true },
+    { id: "margin", label: "Margin", out: "margin", strong: true },
+    { id: "gpu", label: "Gross Profit (utilized)", out: "acct" }
+  ];
+
+  function cellValue(m, c, row) {
+    if (row.input) {
+      if (row.id === "idle") return c.idle;
+      return m[row.id];
+    }
+    if (row.id === "resPrice" && !c.showRes) return 0;
+    if (row.id === "resTotal" && !c.showRes) return 0;
+    if (row.id === "resRev" && Math.abs(c.resRev) < 0.5) return null;
+    return c[row.id];
+  }
+
+  function formatCell(row, v) {
+    if (v == null || (typeof v === "number" && !isFinite(v))) return "–";
+    if (row.input === "pct" || row.out === "margin") return row.out === "margin" ? fmtPct(v * 100) : fmtPct(v);
+    if (row.input === "usd" || row.out === "usd") return fmtUsd(v);
+    if (row.input === "acct" || row.out === "acct") return fmtAcct(v);
+    if (row.out === "hrs") return fmtHrs(v);
+    if (row.input === "num") return String(Math.round(v));
+    return String(v);
+  }
+
+  function parseEdit(raw) {
+    var t = String(raw).trim().replace(/[$,%\s]/g, "");
+    if (!t || t === "–" || t === "-") return 0;
+    var neg = /^\(.*\)$/.test(t) || t.charAt(0) === "-";
+    t = t.replace(/[()]/g, "");
+    var n = parseFloat(t);
+    if (!isFinite(n)) return null;
+    return neg ? -Math.abs(n) : n;
+  }
+
+  function clampMix(m, which) {
+    m.od = Math.max(0, Math.min(100, m.od));
+    m.res = Math.max(0, Math.min(100, m.res));
+    if (which === "idle") return;
+    if (m.od + m.res > 100) {
+      if (which === "od") m.res = +(100 - m.od).toFixed(4);
+      else m.od = +(100 - m.res).toFixed(4);
+    }
+  }
+
+  function applyEdit(m, row, raw) {
+    var n = parseEdit(raw);
+    if (n == null) return;
+    if (row.id === "idle") {
+      var idle = Math.max(0, Math.min(100, n));
+      var left = 100 - idle;
+      var sum = m.od + m.res;
+      if (sum <= 0) { m.od = left; m.res = 0; }
+      else {
+        m.od = +(left * m.od / sum).toFixed(4);
+        m.res = +(left - m.od).toFixed(4);
+      }
+      return;
+    }
+    if (row.id === "nodes") { m.nodes = Math.max(0, n); return; }
+    if (row.id === "cost") { m.cost = Math.max(0, n); return; }
+    if (row.input === "pct") {
+      m[row.id] = n;
+      if (row.id === "od" || row.id === "res") clampMix(m, row.id);
+      return;
+    }
+    m[row.id] = n;
+  }
+
+  function forecastTotals(contract) {
+    var rev = 0, gp = 0;
+    MONTHS.forEach(function (ym) {
+      if (ym <= ACTUAL_LAST) return;
+      var c = calc(contract.months[ym]);
+      rev += c.odRev + c.resRev;
+      gp += c.gp;
+    });
+    return { rev: rev, gp: gp, margin: Math.abs(rev) >= 1 ? gp / rev : null };
+  }
+
+  function render() {
+    var app = document.getElementById("app");
+    var keep = editing;
+    var contract = state[active];
+    var tot = forecastTotals(contract);
+    var html = '<div class="top"><div class="tabs">';
+    ORDER.forEach(function (id) {
+      html += '<button class="tab' + (id === active ? " on" : "") + '" data-tab="' + id + '">' + state[id].name + "</button>";
+    });
+    html += '</div><div class="meta"><div><b>excel_forecast</b></div><div>' + saveNote + '</div><button class="link" id="reset">Reset this tab</button></div></div>';
+    html += '<div class="kpis">'
+      + kpi("Forecast revenue", tot.rev, "Oct-26 → Jun-27")
+      + kpi("Gross profit", tot.gp, "all-in, forecast months")
+      + kpi("Margin", tot.margin == null ? null : tot.margin * 100, "gross profit ÷ revenue", true)
+      + "</div>";
+    html += '<div class="note"><span class="dot">Blue</span> cells are what he types. Price = cost × (1 + premium). Revenue = hours × price, including Slurm, inference and orchestration. Gross profit (all-in) charges cost on every committed hour, idle included. The heavy line is September: actuals on the left, forecast on the right.</div>';
+    html += '<div class="sheet"><table><thead><tr><th class="lab"></th>';
+    MONTHS.forEach(function (ym) {
+      var fc = ym > ACTUAL_LAST;
+      html += '<th class="' + (fc ? "fc" : "") + (ym === "2026-10" ? " split" : "") + '">' + label(ym) + "</th>";
+    });
+    html += "</tr></thead><tbody>";
+    ROWS.forEach(function (row) {
+      if (row.gap) { html += '<tr class="gap"><td class="lab"></td>' + MONTHS.map(function () { return "<td></td>"; }).join("") + "</tr>"; return; }
+      if (row.section) {
+        html += '<tr><td class="lab sec">' + contract.title + "</td>";
+        MONTHS.forEach(function () { html += '<td class="sec"></td>'; });
+        html += "</tr>";
+        return;
+      }
+      html += "<tr><td class=\"lab\">" + row.label + "</td>";
+      MONTHS.forEach(function (ym) {
+        var m = contract.months[ym];
+        var c = calc(m);
+        var v = cellValue(m, c, row);
+        var cls = "num" + (row.input ? " in" : "") + (row.strong ? " strong" : "") + (ym === "2026-10" ? " split" : "");
+        var shown = formatCell(row, v);
+        if (keep && keep.contract === active && keep.month === ym && keep.row === row.id) {
+          html += '<td class="' + cls + '"><input class="cell" data-row="' + row.id + '" data-month="' + ym + '" value="' + esc(shown) + '"/></td>';
+        } else if (row.input) {
+          html += '<td class="' + cls + '" data-edit="' + row.id + '" data-month="' + ym + '">' + shown + "</td>";
+        } else {
+          html += '<td class="' + cls + '">' + shown + "</td>";
+        }
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table></div>";
+    app.innerHTML = html;
+    var input = app.querySelector("input.cell");
+    if (input) { input.focus(); input.select(); }
+  }
+
+  function kpi(labelText, value, sub, isPct) {
+    var neg = typeof value === "number" && value < 0;
+    var shown = value == null ? "–" : (isPct ? fmtPct(value) : (Math.abs(value) >= 1000 ? (neg ? "(" : "") + "$" + comma(Math.abs(value), 0).replace(/[()]/g, "") + (neg ? ")" : "") : fmtUsd(value)));
+    return '<div class="kpi"><div class="l">' + labelText + '</div><div class="v' + (neg ? " neg" : "") + '">' + shown + '</div><div class="l">' + sub + "</div></div>";
+  }
+  function esc(s) { return String(s).replace(/"/g, "&quot;"); }
+
+  function scheduleSave() {
+    if (!client) { saveNote = "In this browser only"; return; }
+    clearTimeout(saveTimer);
+    saveNote = "Saving…";
+    saveTimer = setTimeout(writeVariable, 350);
+  }
+
+  function boundId(cfg) {
+    var m = cfg && cfg.model;
+    if (!m) return null;
+    if (typeof m === "string") return m;
+    return m.controlId || m.id || null;
+  }
+
+  function writeVariable() {
+    if (!variableId) { saveNote = "Type a blue cell"; return; }
+    var payload = JSON.stringify(state);
+    lastWritten = payload;
+    var attempt = client.config && client.config.setVariable
+      ? function () { return client.config.setVariable(variableId, payload); }
+      : function () { return client.setVariable(variableId, payload); };
+    Promise.resolve().then(attempt).then(function () {
+      saveNote = "Saved in this workbook";
+      var meta = document.querySelector(".meta div:nth-child(2)");
+      if (meta && !document.querySelector("input.cell")) meta.textContent = saveNote;
+    }).catch(function () {
+      saveNote = "Could not save — still editable here";
+      var meta = document.querySelector(".meta div:nth-child(2)");
+      if (meta) meta.textContent = saveNote;
+    });
+  }
+
+  function ingest(raw) {
+    var next = clone(SEED);
+    if (raw) {
+      try {
+        var parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (Array.isArray(parsed)) parsed = JSON.parse(parsed[0] || "{}");
+        ORDER.forEach(function (id) {
+          if (!parsed[id] || !parsed[id].months) return;
+          MONTHS.forEach(function (ym) {
+            if (parsed[id].months[ym]) {
+              Object.keys(parsed[id].months[ym]).forEach(function (k) {
+                next[id].months[ym][k] = parsed[id].months[ym][k];
+              });
+            }
+          });
+        });
+      } catch (e) {}
+    }
+    state = next;
+  }
+
+  document.getElementById("app").addEventListener("click", function (ev) {
+    var tab = ev.target.closest("[data-tab]");
+    if (tab) { active = tab.getAttribute("data-tab"); editing = null; render(); return; }
+    if (ev.target.id === "reset") {
+      state[active] = clone(SEED[active]);
+      editing = null;
+      scheduleSave();
+      render();
+      return;
+    }
+    var cell = ev.target.closest("[data-edit]");
+    if (!cell) return;
+    editing = { contract: active, month: cell.getAttribute("data-month"), row: cell.getAttribute("data-edit") };
+    render();
+  });
+
+  document.getElementById("app").addEventListener("keydown", function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    if (ev.key === "Enter") { ev.target.blur(); }
+    if (ev.key === "Escape") { ignoreBlur = true; editing = null; render(); }
+  });
+  document.getElementById("app").addEventListener("focusout", function (ev) {
+    if (ignoreBlur) { ignoreBlur = false; return; }
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    var rowId = ev.target.getAttribute("data-row");
+    var ym = ev.target.getAttribute("data-month");
+    var row = ROWS.filter(function (r) { return r.id === rowId; })[0];
+    if (row) applyEdit(state[active].months[ym], row, ev.target.value);
+    editing = null;
+    scheduleSave();
+    render();
+  });
+
+  if (client) {
+    try {
+      client.config.configureEditorPanel([
+        { name: "model", type: "variable", label: "Forecast model", allowedTypes: ["text"] }
+      ]);
+    } catch (e) {}
+    client.config.subscribe(function (cfg) {
+      var id = boundId(cfg);
+      if (!id || id === variableId) return;
+      variableId = id;
+      var sub = (client.config && client.config.subscribeToWorkbookVariable) || client.subscribeToWorkbookVariable;
+      var host = (client.config && client.config.subscribeToWorkbookVariable) ? client.config : client;
+      if (sub) {
+        try {
+          sub.call(host, id, function (v) {
+            var s = Array.isArray(v) ? v[0] : v;
+            if (!s || s === lastWritten) return;
+            ingest(s);
+            render();
+          });
+        } catch (e) {}
+      }
+      var getter = (client.config && client.config.getVariable) || client.getVariable;
+      if (getter) {
+        Promise.resolve(getter.call(host, id)).then(function (v) {
+          var s = Array.isArray(v) ? v[0] : v;
+          if (s && s !== lastWritten) { ingest(s); render(); }
+        }).catch(function () {});
+      }
+    });
+  }
+
+  ingest(null);
+  saveNote = client ? "Type a blue cell" : "Preview";
+  render();
+})();
+</script>
+</body>
+</html>
