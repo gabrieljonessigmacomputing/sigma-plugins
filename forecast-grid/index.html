@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>excel_forecast</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/@sigmacomputing/plugin@1.3.2/dist/umd/sigmacomputing-plugin.umd.js"></script>
+<style>
+  :root {
+    --ink:#1c1c1e; --blue:#2a3db5; --purple:#4c3fbf; --purple-2:#6a4adf;
+    --line:#e4e4ea; --paper:#fff; --section:#f4f4f7; --inputbg:#f7f8ff;
+    --green:#248a3d; --tab:#ececef; --split:#1c1c1e; --muted:#6e6e73;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; background:#fff; color:var(--ink);
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  #app { height:100%; display:flex; flex-direction:column; padding:8px 10px 6px; gap:6px; background:#fff; }
+  .top { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
+  .tabs { display:flex; gap:6px; align-items:flex-end; }
+  .tab { border:0; background:var(--tab); color:#3a3a3c; border-radius:8px 8px 0 0;
+    padding:6px 14px 7px; font-size:13px; font-weight:600; cursor:pointer; }
+  .tab.on { background:var(--green); color:#fff; }
+  .meta { text-align:right; font-size:11px; color:var(--muted); line-height:1.35; }
+  .meta b { color:var(--ink); font-weight:650; }
+  .kpis { display:flex; gap:8px; }
+  .kpi { background:#f6f6f8; border:1px solid var(--line); border-radius:8px; padding:6px 10px 7px; min-width:128px; }
+  .kpi .l { font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .kpi .v { font-size:16px; font-weight:680; font-variant-numeric:tabular-nums; margin-top:1px; }
+  .kpi .v.neg { color:#9f1239; }
+  .note { font-size:11px; color:var(--muted); }
+  .note .dot { color:var(--blue); font-weight:700; }
+  .sheet { flex:1; min-height:0; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--paper); }
+  table { border-collapse:separate; border-spacing:0; font-size:12px; font-variant-numeric:tabular-nums; }
+  th, td { border-bottom:1px solid var(--line); border-right:1px solid #f0f0f3; padding:0; height:26px; white-space:nowrap; }
+  th.lab, td.lab { position:sticky; left:0; z-index:2; background:#fff; text-align:left; min-width:220px; max-width:220px;
+    padding:0 8px; font-weight:500; border-right:1px solid #d9d9e0; }
+  thead th { position:sticky; top:0; z-index:3; background:var(--purple); color:#fff; font-weight:650; font-size:11px; height:28px; }
+  thead th.lab { z-index:4; background:#2c2c2e; color:#fff; }
+  thead th.fc { background:var(--purple-2); }
+  thead th.split, td.split { box-shadow:inset 3px 0 0 var(--split); }
+  td.num { text-align:right; min-width:72px; width:72px; padding:0 6px; color:var(--ink); font-size:11px; }
+  thead th { min-width:72px; }
+  td.in { color:var(--blue); background:var(--inputbg); cursor:text; font-weight:600; }
+  td.in:hover { outline:1px solid #c5cdf5; outline-offset:-1px; }
+  td.strong { font-weight:700; }
+  td.sec { background:var(--section); font-weight:700; color:var(--ink); }
+  tr.gap td { height:8px; background:#fafafa; border-bottom:0; }
+  td.neg { color:#1c1c1e; }
+  input.cell { width:100%; height:26px; border:2px solid var(--green); margin:0; padding:0 6px;
+    text-align:right; font:inherit; font-weight:650; color:var(--blue); background:#fff; outline:none; }
+  button.link { border:0; background:none; color:var(--muted); font-size:11px; cursor:pointer; padding:0; text-decoration:underline; }
+  .tools { display:flex; gap:6px; margin-left:auto; margin-right:10px; }
+  .tool { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:7px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; }
+  .tool.on, .tool:hover { border-color:var(--purple); color:var(--purple); }
+  .save { border:0; background:var(--green); color:#fff; border-radius:7px; padding:5px 12px; font-size:12px; font-weight:700; cursor:pointer; }
+  .save[disabled], .tool[disabled] { background:#ececef; color:#8e8e93; border-color:transparent; cursor:default; }
+  .tab.dirty { box-shadow:inset 0 -3px 0 #e8a317; }
+  td.in.draft { background:#fff6e4; }
+  .body { flex:1; min-height:0; display:flex; gap:8px; }
+  .side { width:340px; flex:none; overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fbfbfd; padding:8px 10px; font-size:12px; }
+  .side-h { display:flex; justify-content:space-between; align-items:center; font-size:13px; margin-bottom:6px; }
+  .x { border:0; background:none; font-size:18px; cursor:pointer; color:var(--muted); }
+  .sub { color:var(--muted); font-size:11px; line-height:1.4; margin:2px 0 8px; }
+  .sub b { color:var(--ink); }
+  .crumb { margin-bottom:4px; }
+  .empty { color:var(--muted); padding:10px 0; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:7px 9px; margin-bottom:6px; }
+  .card.cur { border-color:var(--green); }
+  .ch { display:flex; justify-content:space-between; gap:6px; font-size:11px; color:var(--muted); }
+  .chip { background:#eef0fb; color:var(--blue); border-radius:5px; padding:0 6px; font-weight:650; }
+  .card.cur .chip { background:#e6f4ea; color:var(--green); }
+  .who { font-size:11px; color:var(--ink); margin-top:2px; }
+  .who-s { font-weight:650; color:var(--ink); }
+  .chg { font-weight:650; margin-top:3px; line-height:1.3; }
+  .scope { color:var(--muted); font-size:11px; margin-top:1px; }
+  .what { font-size:11px; color:#3a3a3c; margin-top:3px; line-height:1.35; }
+  .act { margin-top:6px; border:0; background:var(--purple); color:#fff; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; }
+  .act.ghost { background:#fff; color:var(--purple); border:1px solid var(--purple); }
+  .act[disabled] { opacity:.45; cursor:default; }
+  .confirm { margin-top:6px; background:#fff8e6; border:1px solid #f3d48a; border-radius:6px; padding:6px 8px; font-size:11px; line-height:1.4; }
+  .row2 { display:flex; gap:6px; }
+  .f { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--muted); margin-bottom:8px; flex:1; }
+  .f select, .f input { font:inherit; font-size:12px; color:var(--ink); padding:5px 6px; border:1px solid #d9d9e0; border-radius:6px; background:#fff; }
+  .f2 { display:flex; gap:8px; }
+  .cks { display:flex; flex-direction:column; gap:3px; color:var(--ink); }
+  .chk { font-size:12px; color:var(--ink); display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+  .preview { background:#fff; border:1px solid var(--line); border-radius:6px; padding:6px 8px; margin:4px 0 2px; line-height:1.45; }
+  .warn { color:#9f1239; margin:4px 0; }
+  th.mh { cursor:pointer; }
+  th.mh:hover { text-decoration:underline; }
+  th.picked { box-shadow:inset 0 -3px 0 #ffd60a; }
+  td.edited { background-image:linear-gradient(225deg, var(--purple-2) 6px, transparent 6px); }
+  td.pend { color:#8e8e93; font-style:italic; }
+  td.fail { outline:1px solid #e11d48; outline-offset:-1px; }
+  .mk { display:inline-block; width:9px; height:9px; vertical-align:-1px; background:linear-gradient(225deg, var(--purple-2) 6px, #f7f8ff 6px); border:1px solid var(--line); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function () {
+  var client = (window.SigmaPlugin && window.SigmaPlugin.client)
+    || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client);
+
+  /* Months, contracts, and every starting input come from the workbook's Forecast Seed.
+     This file is public. It must not contain a customer's names or numbers. */
+  var MONTHS = [];
+  var ORDER = [];
+  var SEED = {};
+  var active = null;
+  var savedHold = null;
+
+  function label(ym) {
+    var p = String(ym || "").split("-");
+    if (p.length < 2) return String(ym || "");
+    return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+p[1] - 1] + "-" + p[0].slice(2);
+  }
+  function isForecast(ym) {
+    var row = seedOf(ORDER[0], ym);
+    return !!(row && row.forecast);
+  }
+  function forecastMonths() { return MONTHS.filter(isForecast); }
+  function splitMonth() {
+    var fm = forecastMonths();
+    return fm.length ? fm[0] : "";
+  }
+  var editing = null;
+  var state = null;
+  var committed = null;
+  var saveNote = "";
+  var saveTimer = null;
+  var ignoreBlur = false;
+  var bindings = {};
+  var logQueue = Promise.resolve();
+  var hostChain = Promise.resolve();
+  var pending = {};
+  var failed = {};
+  var wiredSaved = {};
+  var seenHost = [];
+  var echoes = [];
+  var history = [];
+  var panel = null;
+  var pick = null;
+  var confirmUndo = null;
+  var writeMode = "row";
+  var bulk = null;
+  window.addEventListener("message", function (ev) {
+    var t = ev.data && ev.data.type;
+    if (!t || String(t).indexOf("wb:plugin:") !== 0) return;
+    seenHost.push(String(t));
+    if (seenHost.length > 12) seenHost.shift();
+    if (t === "wb:plugin:variable:update") {
+      try { echoes.push(JSON.stringify(ev.data)); } catch (e) {}
+      if (echoes.length > 40) echoes.shift();
+    }
+  });
+  var INPUT_KEYS = ["od", "res", "nodes", "cost", "deposit", "capex", "premium", "slurm", "inf", "orch", "rdisc", "rslurm", "rinf", "rorch", "gpus", "hours"];
+  var KEY_LABEL = {
+    od: "On-demand %", res: "Reserve %", nodes: "Nodes", cost: "Cost/hr", deposit: "Cash deposit", capex: "Capex",
+    premium: "Premium %", slurm: "Slurm %", inf: "Inference %", orch: "Orchestration %", rdisc: "Reserve discount %",
+    rslurm: "Reserve Slurm %", rinf: "Reserve inference %", rorch: "Reserve orchestration %", gpus: "GPUs/node", hours: "Hours"
+  };
+  var PAIRED = { slurm: "rslurm", inf: "rinf", orch: "rorch" };
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  function calc(m) {
+    var od = m.od / 100, res = m.res / 100;
+    var committed = m.nodes * m.gpus * m.hours;
+    var odHours = committed * od;
+    var resHours = committed * res;
+    var utilized = odHours + resHours;
+    var odPrice = m.cost * (1 + m.premium / 100);
+    var odTotal = odPrice * (1 + (m.slurm + m.inf + m.orch) / 100);
+    var showRes = m.rdisc > 0 || res > 0;
+    var resPrice = showRes ? odPrice * (1 - m.rdisc / 100) : 0;
+    var resTotal = resPrice * (1 + (m.rslurm + m.rinf + m.rorch) / 100);
+    var odRev = odHours * odTotal;
+    var resRev = resHours * resTotal;
+    var rev = odRev + resRev;
+    return {
+      idle: Math.max(0, 100 - m.od - m.res),
+      committed: committed, utilized: utilized,
+      odPrice: odPrice, odTotal: odTotal, odRev: odRev,
+      resPrice: resPrice, resTotal: resTotal, resRev: resRev, showRes: showRes,
+      wprice: utilized > 0.5 ? rev / utilized : odTotal,
+      gp: rev - m.cost * committed,
+      gpu: rev - m.cost * utilized,
+      margin: Math.abs(rev) >= 1 ? (rev - m.cost * committed) / rev : null
+    };
+  }
+
+  function comma(n, d) {
+    var s = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    return n < -0.5 ? "(" + s + ")" : s;
+  }
+  function fmtPct(n) {
+    if (n == null || !isFinite(n)) return "–";
+    var v = Math.abs(n - Math.round(n)) < 0.05 ? Math.round(n) : Math.round(n * 10) / 10;
+    return (n < 0 ? "(" + Math.abs(v) + "%)" : v + "%");
+  }
+  function fmtUsd(n) {
+    if (!isFinite(n)) return "–";
+    return (n < -0.005 ? "(" : "") + "$" + comma(Math.abs(n) < 0.005 ? 0 : n, 2).replace(/[()]/g, "") + (n < -0.005 ? ")" : "");
+  }
+  function fmtAcct(n) {
+    if (!isFinite(n)) return "–";
+    if (Math.abs(n) < 0.5) return "–";
+    return comma(n, 0);
+  }
+  function fmtHrs(n) { return comma(n, 0); }
+
+  var ROWS = [
+    { id: "od", label: "On-demand", input: "pct" },
+    { id: "res", label: "Reserve", input: "pct" },
+    { id: "idle", label: "Idle", input: "pct" },
+    { id: "title", section: true },
+    { id: "nodes", label: "Nodes", input: "num" },
+    { id: "cost", label: "Cost per Hour", input: "usd" },
+    { id: "deposit", label: "Cash Deposit", input: "acct" },
+    { id: "capex", label: "Capex Cost", input: "acct" },
+    { id: "g1", gap: true },
+    { id: "committed", label: "Committed GPU hours", out: "hrs" },
+    { id: "utilized", label: "Utilized GPU hours", out: "hrs" },
+    { id: "g2", gap: true },
+    { id: "premium", label: "On-demand Premium vs. Cost", input: "pct" },
+    { id: "odPrice", label: "On-demand Price per Hour", out: "usd" },
+    { id: "slurm", label: "Managed Slurm and Kubernetes", input: "pct" },
+    { id: "inf", label: "Inference", input: "pct" },
+    { id: "orch", label: "Multicloud Orchestration", input: "pct" },
+    { id: "odTotal", label: "Total On-demand Price per Hour", out: "usd", strong: true },
+    { id: "odRev", label: "On-demand Revenue", out: "acct", strong: true },
+    { id: "g3", gap: true },
+    { id: "rdisc", label: "Reserve Discount vs. On-demand", input: "pct" },
+    { id: "resPrice", label: "Reserve Price per Hour", out: "usd" },
+    { id: "rslurm", label: "Managed Slurm and Kubernetes", input: "pct" },
+    { id: "rinf", label: "Inference", input: "pct" },
+    { id: "rorch", label: "Multicloud Orchestration", input: "pct" },
+    { id: "resTotal", label: "Total Reserve Price per Hour", out: "usd", strong: true },
+    { id: "resRev", label: "Reserve Revenue", out: "acct", strong: true },
+    { id: "g4", gap: true },
+    { id: "wprice", label: "Weighted Price", out: "usd", strong: true },
+    { id: "gp", label: "Gross Profit (all-in)", out: "acct", strong: true },
+    { id: "margin", label: "Margin", out: "margin", strong: true },
+    { id: "gpu", label: "Gross Profit (utilized)", out: "acct" }
+  ];
+
+  function cellValue(m, c, row) {
+    if (row.input) {
+      if (row.id === "idle") return c.idle;
+      return m[row.id];
+    }
+    if (row.id === "resPrice" && !c.showRes) return 0;
+    if (row.id === "resTotal" && !c.showRes) return 0;
+    if (row.id === "resRev" && Math.abs(c.resRev) < 0.5) return null;
+    return c[row.id];
+  }
+
+  function formatCell(row, v) {
+    if (v == null || (typeof v === "number" && !isFinite(v))) return "–";
+    if (row.input === "pct" || row.out === "margin") return row.out === "margin" ? fmtPct(v * 100) : fmtPct(v);
+    if (row.input === "usd" || row.out === "usd") return fmtUsd(v);
+    if (row.input === "acct" || row.out === "acct") return fmtAcct(v);
+    if (row.out === "hrs") return fmtHrs(v);
+    if (row.input === "num") return String(Math.round(v));
+    return String(v);
+  }
+
+  function parseEdit(raw) {
+    var t = String(raw).trim().replace(/[$,%\s]/g, "");
+    if (!t || t === "–" || t === "-") return 0;
+    var neg = /^\(.*\)$/.test(t) || t.charAt(0) === "-";
+    t = t.replace(/[()]/g, "");
+    var n = parseFloat(t);
+    if (!isFinite(n)) return null;
+    return neg ? -Math.abs(n) : n;
+  }
+
+  function clampMix(m, which) {
+    m.od = Math.max(0, Math.min(100, m.od));
+    m.res = Math.max(0, Math.min(100, m.res));
+    if (which === "idle") return;
+    if (m.od + m.res > 100) {
+      if (which === "od") m.res = +(100 - m.od).toFixed(4);
+      else m.od = +(100 - m.res).toFixed(4);
+    }
+  }
+
+  function applyEdit(m, row, raw) {
+    var n = parseEdit(raw);
+    if (n == null) return;
+    if (row.id === "idle") {
+      var idle = Math.max(0, Math.min(100, n));
+      var left = 100 - idle;
+      var sum = m.od + m.res;
+      if (sum <= 0) { m.od = left; m.res = 0; }
+      else {
+        m.od = +(left * m.od / sum).toFixed(4);
+        m.res = +(left - m.od).toFixed(4);
+      }
+      return;
+    }
+    if (row.id === "nodes") { m.nodes = Math.max(0, n); return; }
+    if (row.id === "cost") { m.cost = Math.max(0, n); return; }
+    if (row.input === "pct") {
+      m[row.id] = n;
+      if (row.id === "od" || row.id === "res") clampMix(m, row.id);
+      return;
+    }
+    m[row.id] = n;
+  }
+
+  function forecastTotals(contract) {
+    var rev = 0, gp = 0;
+    MONTHS.forEach(function (ym) {
+      if (!isForecast(ym)) return;
+      var c = calc(contract.months[ym]);
+      rev += c.odRev + c.resRev;
+      gp += c.gp;
+    });
+    return { rev: rev, gp: gp, margin: Math.abs(rev) >= 1 ? gp / rev : null };
+  }
+
+  function seedOf(cid, ym) { return SEED[cid] && SEED[cid].months[ym] ? SEED[cid].months[ym] : null; }
+  function cname(cid) { return state && state[cid] ? state[cid].name : cid; }
+  function pickVals(m) { var o = {}; INPUT_KEYS.forEach(function (k) { o[k] = Number(m[k]); }); return o; }
+  function sameVals(a, b) { return INPUT_KEYS.every(function (k) { return closeEnough(a[k], b[k]); }); }
+  function baseline(cid, ym) {
+    if (committed && committed[cid] && committed[cid][ym]) return committed[cid][ym];
+    var seed = seedOf(cid, ym);
+    return seed ? pickVals(seed) : null;
+  }
+  function remember(cid, ym, vals) {
+    if (!committed[cid]) committed[cid] = {};
+    committed[cid][ym] = clone(vals);
+  }
+  function isDirty(cid, ym) {
+    if (!state || !state[cid] || !state[cid].months[ym]) return false;
+    var base = baseline(cid, ym);
+    return !!base && !sameVals(pickVals(state[cid].months[ym]), base);
+  }
+  function unsavedRows() {
+    var rows = [];
+    ORDER.forEach(function (cid) {
+      MONTHS.forEach(function (ym) {
+        if (isDirty(cid, ym)) rows.push({ contract: cid, ym: ym, vals: pickVals(state[cid].months[ym]) });
+      });
+    });
+    return rows;
+  }
+  function unsavedNote() {
+    var rows = unsavedRows();
+    if (!rows.length) return "";
+    var n = rows.length;
+    return "Unsaved · " + n + (n === 1 ? " month" : " months") + " · Save snapshot writes " + (n === 1 ? "it" : "them") + " to Redshift";
+  }
+  function applyVals(cid, ym, vals) {
+    INPUT_KEYS.forEach(function (k) { state[cid].months[ym][k] = vals[k]; });
+  }
+  function html(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function shortWho(email) { return String(email || "").split("@")[0]; }
+  function monthSpan(list) {
+    var ms = list.slice().sort();
+    if (!ms.length) return "";
+    return ms.length === 1 ? label(ms[0]) : label(ms[0]) + "–" + label(ms[ms.length - 1]);
+  }
+
+  /* ---------- history: every saved version, from Forecast Log History ---------- */
+
+  function hcol(data, key) {
+    var id = refId(bindings["h_" + key]);
+    if (id && Object.prototype.hasOwnProperty.call(data, id)) return data[id];
+    var alt = "ha-" + key;
+    if (Object.prototype.hasOwnProperty.call(data, alt)) return data[alt];
+    return null;
+  }
+
+  function applyHistory(raw) {
+    var data = unwrapData(raw);
+    if (!data) return;
+    var ids = hcol(data, "row");
+    if (!ids) return;
+    var cols = {};
+    ["contract", "month", "ver", "cur", "by", "attxt", "chg", "batch", "what"].concat(INPUT_KEYS).forEach(function (k) { cols[k] = hcol(data, k) || []; });
+    var rows = [];
+    for (var i = 0; i < ids.length; i++) {
+      var vals = {};
+      INPUT_KEYS.forEach(function (k) { vals[k] = Number(cols[k][i]); });
+      rows.push({
+        id: ids[i], contract: cols.contract[i], month: cols.month[i], key: cols.contract[i] + "|" + cols.month[i],
+        ver: Number(cols.ver[i]), cur: Number(cols.cur[i]) === 1, by: cols.by[i], at: cols.attxt[i] || "",
+        chg: cols.chg[i] || "Cell edit", batch: cols.batch[i] || ids[i], what: cols.what[i] || "", vals: vals
+      });
+    }
+    rows.sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : b.ver - a.ver; });
+    history = rows;
+    if (!editing && !document.querySelector("input.cell")) render();
+  }
+
+  function versionsOf(key) {
+    return history.filter(function (r) { return r.key === key; }).sort(function (a, b) { return b.ver - a.ver; });
+  }
+
+  // Who last changed each field of a contract-month, walking versions oldest first against the seed.
+  function fieldAuthors(cid, ym) {
+    var vs = versionsOf(cid + "|" + ym).slice().reverse();
+    var prev = seedOf(cid, ym);
+    var out = {};
+    vs.forEach(function (r) {
+      INPUT_KEYS.forEach(function (k) {
+        if (prev && !closeEnough(r.vals[k], prev[k])) out[k] = r;
+      });
+      prev = r.vals;
+    });
+    return out;
+  }
+
+  function changeSets() {
+    var by = {};
+    history.forEach(function (r) {
+      var b = by[r.batch];
+      if (!b) b = by[r.batch] = { id: r.batch, at: r.at, first: r.at, by: r.by, chg: r.chg, rows: [], keys: {}, contracts: {}, months: {} };
+      b.rows.push(r);
+      b.keys[r.key] = true;
+      b.contracts[r.contract] = true;
+      b.months[r.month] = true;
+      if (r.at > b.at) b.at = r.at;
+      if (r.at < b.first) b.first = r.at;
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+
+  // What undoing a change set writes: each cell goes back to the version just before that change set, or to the seed.
+  function undoPlan(cs) {
+    var out = [], later = [];
+    Object.keys(cs.keys).forEach(function (key) {
+      var mine = cs.rows.filter(function (r) { return r.key === key; });
+      var minVer = Math.min.apply(null, mine.map(function (r) { return r.ver; }));
+      var maxVer = Math.max.apply(null, mine.map(function (r) { return r.ver; }));
+      var vs = versionsOf(key);
+      var before = vs.filter(function (r) { return r.ver < minVer; })[0];
+      var p = key.split("|");
+      var target = before ? before.vals : pickVals(seedOf(p[0], p[1]) || {});
+      var newest = vs[0];
+      if (newest && newest.ver > maxVer) later.push(newest);
+      out.push({ contract: p[0], ym: p[1], vals: target, from: before ? "v" + before.ver : "seed" });
+    });
+    return { rows: out, later: later };
+  }
+
+  /* ---------- write path: one payload control, one insert per contract-month, one refresh ---------- */
+
+  function hostError(err) {
+    if (!err) return "Redshift did not take that edit";
+    if (typeof err === "string") return err;
+    try { return JSON.stringify(err); } catch (e) { return "Redshift did not take that edit"; }
+  }
+
+  /* The SDK posts to the workbook and drops the promise. One host reply resolves
+     every in-flight listener of that type, so host calls stay strictly serial. */
+  function hostSend(type, send, timeoutMs) {
+    var run = function () {
+      return new Promise(function (resolve, reject) {
+        var settled = false;
+        var timer = setTimeout(function () { finish(new Error("Sigma did not confirm the write")); }, timeoutMs || 8000);
+        function finish(err, value) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          window.removeEventListener("message", onMsg);
+          if (err && err.message && err.message.indexOf("did not confirm") === 0 && seenHost.length) {
+            err = new Error(err.message + " (" + seenHost.slice(-4).join(", ") + ")");
+          }
+          if (err) reject(err);
+          else resolve(value);
+        }
+        function onMsg(ev) {
+          var data = ev.data;
+          if (!data || data.type !== type) return;
+          if (data.error) finish(new Error(hostError(data.error)));
+          else finish(null, data.result);
+        }
+        window.addEventListener("message", onMsg);
+        try { send(); } catch (e) { finish(e); }
+      });
+    };
+    var next = hostChain.then(run, run);
+    hostChain = next.then(function () {}, function () {});
+    return next;
+  }
+
+  function bindingId(key) {
+    var raw = bindings[key] !== undefined && /^(view|onSave|onRow|onRefresh)$/.test(key) ? bindings[key] : bindings["c_" + key];
+    return refId(raw);
+  }
+
+  function setControl(key, value) {
+    if (!client || !client.config || !client.config.setVariable) {
+      return Promise.reject(new Error("This grid is not inside Sigma"));
+    }
+    var panelName = key === "view" ? "view" : ("c_" + key);
+    var id = bindingId(key) || panelName;
+    return hostSend("wb:plugin:variable:set", function () {
+      client.config.setVariable(id, value == null ? "" : String(value));
+    }, 8000);
+  }
+
+  function trigger(name, timeoutMs) {
+    if (!client || !client.config || !client.config.triggerAction) {
+      return Promise.reject(new Error("This grid is not inside Sigma"));
+    }
+    var id = bindingId(name) || name;
+    return hostSend("wb:plugin:action-trigger:invoke", function () {
+      client.config.triggerAction(id);
+    }, timeoutMs || 25000);
+  }
+
+  // Wait until the workbook echoes the control value back, so the insert reads this payload and not the last one.
+  function waitEcho(token, ms) {
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      (function tick() {
+        if (echoes.some(function (e) { return e.indexOf(token) >= 0; })) return resolve(true);
+        if (Date.now() - start > ms) return resolve(false);
+        setTimeout(tick, 60);
+      })();
+    });
+  }
+
+  function clean(s) { return String(s || "").replace(/[|\r\n]+/g, " / ").slice(0, 180); }
+  function nonce() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function writeRowPayload(row, action, batch) {
+    var tok = "n" + nonce();
+    var parts = [row.contract, row.ym].concat(INPUT_KEYS.map(function (k) { return String(row.vals[k]); }), [clean(action), batch, tok]);
+    return setControl("payload", parts.join("|"))
+      .then(function () { return waitEcho(tok, 1500); })
+      .then(function () { return trigger("onRow"); });
+  }
+
+  function writeRowLegacy(row, action, batch) {
+    var pairs = { contract: row.contract, month: row.ym, action: clean(action), batch: batch };
+    INPUT_KEYS.forEach(function (k) { pairs[k] = row.vals[k]; });
+    var seq = Promise.resolve();
+    Object.keys(pairs).forEach(function (k) {
+      seq = seq.then(function () { return setControl(k, pairs[k]); });
+    });
+    return seq.then(function () { return trigger("onSave"); });
+  }
+
+  function landed(row, batch) {
+    var key = row.contract + "|" + row.ym;
+    return history.some(function (r) { return r.key === key && r.batch === batch && sameVals(r.vals, row.vals); });
+  }
+
+  function waitLanded(rows, batch, ms) {
+    return new Promise(function (resolve) {
+      var start = Date.now(), nudged = 0;
+      (function tick() {
+        var left = rows.filter(function (r) { return !landed(r, batch); });
+        if (!left.length) return resolve([]);
+        var el = Date.now() - start;
+        if (el > ms) return resolve(left);
+        if ((el > 9000 && nudged === 0) || (el > 20000 && nudged === 1)) {
+          nudged++;
+          trigger("onRefresh").catch(function () {});
+        }
+        setTimeout(tick, 600);
+      })();
+    });
+  }
+
+  function newBatchId() { return "cs-" + nonce(); }
+
+  // Every change goes through here: a single cell, a bulk apply, a paste, an undo, a restore.
+  function submit(rows, action) {
+    if (!rows.length) { note("Nothing to change"); return; }
+    if (!client) { note("In this browser only"); return; }
+    var batch = newBatchId();
+    var prior = {};
+    rows.forEach(function (r) {
+      var key = r.contract + "|" + r.ym;
+      prior[key] = clone(baseline(r.contract, r.ym));
+      remember(r.contract, r.ym, r.vals);
+      pending[key] = clone(r.vals);
+      delete failed[key];
+      if (state[r.contract] && state[r.contract].months[r.ym]) applyVals(r.contract, r.ym, r.vals);
+    });
+    render();
+    var hasHistory = !!refId(bindings.history) || history.length > 0;
+    logQueue = logQueue.then(function () {
+      var mode = bindingId("onRow") && bindingId("payload") ? writeMode : "legacy";
+      var n = rows.length, i = 0;
+      var write = function (r) { return mode === "row" ? writeRowPayload(r, action, batch) : writeRowLegacy(r, action, batch); };
+      var seq = Promise.resolve();
+      rows.forEach(function (r) {
+        seq = seq.then(function () {
+          i++;
+          note("Writing " + i + " of " + n + " to Redshift…");
+          return write(r);
+        });
+      });
+      return seq.then(function () {
+        if (mode === "row") return trigger("onRefresh");
+      }).then(function () {
+        if (!hasHistory) return waitPendingClear(rows, 30000);
+        note("Written · waiting for Redshift to show " + n + (n === 1 ? " row" : " rows"));
+        return waitLanded(rows, batch, 22000).then(function (left) {
+          if (!left.length || mode !== "row") return left;
+          // One retry for anything the log does not show yet. Same change set id, so it still groups.
+          note("Re-sending " + left.length + " row" + (left.length === 1 ? "" : "s") + " the log does not show");
+          var again = Promise.resolve();
+          left.forEach(function (r) { again = again.then(function () { return write(r); }); });
+          return again.then(function () { return trigger("onRefresh"); })
+            .then(function () { return waitLanded(left, batch, 30000); })
+            .then(function (still) {
+              if (still.length === left.length && left.length === n) writeMode = "legacy";
+              return still;
+            });
+        });
+      }).then(function (left) {
+        left = left || [];
+        rows.forEach(function (r) {
+          var key = r.contract + "|" + r.ym;
+          if (left.indexOf(r) >= 0) {
+            failed[key] = true;
+            if (prior[key]) remember(r.contract, r.ym, prior[key]);
+          } else delete pending[key];
+        });
+        var still = unsavedNote();
+        if (!left.length) note("Saved in Redshift · " + n + (n === 1 ? " row" : " rows") + " · " + batch + (still ? " · " + still : ""));
+        else note(left.length + " of " + n + " did not show in the log: " + left.map(function (r) { return cname(r.contract) + " " + label(r.ym); }).slice(0, 4).join(", ") + (still ? " · " + still : ""));
+        render();
+      });
+    }).catch(function (err) {
+      rows.forEach(function (r) {
+        var key = r.contract + "|" + r.ym;
+        failed[key] = true;
+        if (prior[key]) remember(r.contract, r.ym, prior[key]);
+      });
+      note(err && err.message ? err.message : "Redshift did not take that edit");
+      render();
+    });
+  }
+
+  // Old spec without the history element: fall back to the sheet read, as before.
+  function waitPendingClear(rows, ms) {
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      (function tick() {
+        var left = rows.filter(function (r) { return pending[r.contract + "|" + r.ym]; });
+        if (!left.length || Date.now() - start > ms) return resolve(left);
+        setTimeout(tick, 500);
+      })();
+    });
+  }
+
+  function note(text) {
+    saveNote = text;
+    var meta = document.getElementById("status");
+    if (meta) meta.textContent = saveNote;
+  }
+
+  /* ---------- reading the winning row per month (Forecast Read) ---------- */
+
+  function closeEnough(a, b) {
+    var x = Number(a), y = Number(b);
+    if (!isFinite(x) || !isFinite(y)) return false;
+    return Math.abs(x - y) <= 0.001 + 1e-6 * Math.abs(y);
+  }
+
+  function unwrapData(dd) {
+    if (dd && typeof dd === "object" && dd.data && typeof dd.data === "object" && !Array.isArray(dd.data) &&
+        ("offset" in dd || "isComplete" in dd)) return dd.data;
+    return dd;
+  }
+
+  function refId(v) {
+    if (!v) return null;
+    if (typeof v === "string") return v;
+    return v.controlId || v.columnId || v.elementId || v.actionTriggerId || v.id || null;
+  }
+
+  function column(data, key) {
+    var id = refId(bindings["d_" + key]);
+    if (id && Object.prototype.hasOwnProperty.call(data, id)) return data[id];
+    var alt = "fo-" + key;
+    if (Object.prototype.hasOwnProperty.call(data, alt)) return data[alt];
+    return null;
+  }
+
+  function baseCol(data, key) {
+    var id = refId(bindings["b_" + key]);
+    if (id && Object.prototype.hasOwnProperty.call(data, id)) return data[id];
+    return null;
+  }
+  function applyBase(raw) {
+    var data = unwrapData(raw);
+    if (!data) return;
+    var contracts = baseCol(data, "contract");
+    var months = baseCol(data, "month");
+    if (!contracts || !months || !contracts.length) return;
+    var names = baseCol(data, "name") || [];
+    var titles = baseCol(data, "title") || [];
+    var flags = baseCol(data, "forecast") || [];
+    var fields = {};
+    var missing = false;
+    INPUT_KEYS.forEach(function (k) {
+      fields[k] = baseCol(data, k);
+      if (!fields[k]) missing = true;
+    });
+    if (missing) return;
+    var seed = {}, order = [], seen = {}, monthSet = {};
+    for (var i = 0; i < contracts.length; i++) {
+      var cid = String(contracts[i]), ym = String(months[i]);
+      if (!seed[cid]) {
+        seed[cid] = { name: names[i] || cid, title: titles[i] || names[i] || cid, months: {} };
+        order.push(cid);
+      }
+      var row = { forecast: Number(flags[i]) === 1 };
+      INPUT_KEYS.forEach(function (k) { row[k] = Number(fields[k][i]); });
+      seed[cid].months[ym] = row;
+      if (!seen[ym]) { seen[ym] = true; monthSet[ym] = true; }
+    }
+    var monthsSorted = Object.keys(monthSet).sort();
+    if (!order.length || !monthsSorted.length) return;
+    var first = !state;
+    SEED = seed;
+    ORDER = order;
+    MONTHS = monthsSorted;
+    if (!active || !seed[active]) active = order[0];
+    if (first) {
+      state = clone(SEED);
+      committed = {};
+      ORDER.forEach(function (cid) {
+        MONTHS.forEach(function (ym) { remember(cid, ym, pickVals(state[cid].months[ym])); });
+      });
+      if (savedHold) { var hold = savedHold; savedHold = null; applySaved(hold); }
+      if (saveNote.indexOf("Loading") === 0) note("Type a blue cell, then Save snapshot");
+      render();
+    }
+  }
+
+  function applySaved(raw) {
+    if (!state) { savedHold = raw; return; }
+    var data = unwrapData(raw);
+    if (!data || !state) return;
+    if (saveNote.indexOf("Loading saved forecast") === 0) note("Type a blue cell, then Save snapshot");
+    var contracts = column(data, "contract");
+    var months = column(data, "month");
+    if (!contracts || !contracts.length || !months) return;
+    var dirty = false;
+    for (var i = 0; i < contracts.length; i++) {
+      var cid = contracts[i], ym = months[i];
+      if (!state[cid] || !state[cid].months[ym]) continue;
+      var incoming = {};
+      var complete = true;
+      INPUT_KEYS.forEach(function (k) {
+        var arr = column(data, k);
+        if (!arr) { complete = false; return; }
+        var n = Number(arr[i]);
+        if (!isFinite(n)) { complete = false; return; }
+        incoming[k] = n;
+      });
+      if (!complete) continue;
+      var key = cid + "|" + ym;
+      var expect = pending[key];
+      if (expect && !sameVals(incoming, expect)) continue;
+      var local = pickVals(state[cid].months[ym]);
+      var wasDirty = isDirty(cid, ym);
+      if (!(wasDirty && !expect)) remember(cid, ym, incoming);
+      if (expect && !refId(bindings.history)) delete pending[key];
+      // A refresh must not wipe months the user has typed and not saved.
+      if (!wasDirty || (expect && sameVals(local, expect))) {
+        INPUT_KEYS.forEach(function (k) {
+          if (!closeEnough(state[cid].months[ym][k], incoming[k])) {
+            state[cid].months[ym][k] = incoming[k];
+            dirty = true;
+          }
+        });
+      }
+    }
+    if (dirty && !editing && !document.querySelector("input.cell")) render();
+  }
+
+  /* ---------- render ---------- */
+
+  function render() {
+    var app = document.getElementById("app");
+    if (!state || !active || !state[active]) {
+      app.innerHTML = '<div class="empty">' + html(saveNote) + "</div>";
+      return;
+    }
+    var keep = editing;
+    var contract = state[active];
+    var tot = forecastTotals(contract);
+    var authors = {};
+    MONTHS.forEach(function (ym) { authors[ym] = fieldAuthors(active, ym); });
+    var h = '<div class="top"><div class="tabs">';
+    var open = unsavedRows();
+    ORDER.forEach(function (id) {
+      var tabDirty = MONTHS.some(function (ym) { return isDirty(id, ym); });
+      h += '<button class="tab' + (id === active ? " on" : "") + (tabDirty ? " dirty" : "") + '" data-tab="' + id + '">' + state[id].name + "</button>";
+    });
+    h += '</div><div class="tools">'
+      + '<button class="save" id="save-snap"' + (open.length ? "" : " disabled") + ">Save snapshot</button>"
+      + '<button class="tool" id="discard"' + (open.length ? "" : " disabled") + ">Discard</button>"
+      + '<button class="tool' + (panel === "bulk" ? " on" : "") + '" data-panel="bulk">Apply to many</button>'
+      + '<button class="tool' + (panel === "history" ? " on" : "") + '" data-panel="history">History &amp; undo</button>'
+      + '</div><div class="meta"><div><b>excel_forecast</b></div><div id="status">' + html(saveNote) + '</div><button class="link" id="reset">Reset this tab to the starting file</button></div></div>';
+    h += '<div class="kpis">'
+      + kpi("Forecast revenue", tot.rev, "Oct-26 → Jun-27")
+      + kpi("Gross profit", tot.gp, "all-in, forecast months")
+      + kpi("Margin", tot.margin == null ? null : tot.margin * 100, "gross profit ÷ revenue", true)
+      + "</div>";
+    h += '<div class="note"><span class="dot">Blue</span> cells are inputs. Type, paste a block from Excel, or Apply to many. Nothing is written until <b>Save snapshot</b>. That writes one Redshift row per changed month, with who and when, as one change set you can undo. A <span class="mk"></span> corner marks a value already saved and different from the starting file. An amber cell is typed but not saved yet.</div>';
+    h += '<div class="body"><div class="sheet"><table><thead><tr><th class="lab"></th>';
+    MONTHS.forEach(function (ym) {
+      var fc = isForecast(ym);
+      h += '<th class="mh' + (fc ? " fc" : "") + (ym === splitMonth() ? " split" : "") + (pick === ym ? " picked" : "") + '" data-pick="' + ym + '" title="Versions of ' + label(ym) + '">' + label(ym) + "</th>";
+    });
+    h += "</tr></thead><tbody>";
+    ROWS.forEach(function (row) {
+      if (row.gap) { h += '<tr class="gap"><td class="lab"></td>' + MONTHS.map(function () { return "<td></td>"; }).join("") + "</tr>"; return; }
+      if (row.section) {
+        h += '<tr><td class="lab sec">' + contract.title + "</td>";
+        MONTHS.forEach(function () { h += '<td class="sec"></td>'; });
+        h += "</tr>";
+        return;
+      }
+      h += "<tr><td class=\"lab\">" + row.label + "</td>";
+      MONTHS.forEach(function (ym) {
+        var m = contract.months[ym];
+        var c = calc(m);
+        var v = cellValue(m, c, row);
+        var key = active + "|" + ym;
+        var seedM = seedOf(active, ym);
+        var who = row.input && row.id !== "idle" && seedM && !closeEnough(m[row.id], seedM[row.id]) ? authors[ym][row.id] : null;
+        var cls = "num" + (row.input ? " in" : "") + (row.strong ? " strong" : "") + (ym === splitMonth() ? " split" : "")
+          + (who ? " edited" : "") + (row.input && isDirty(active, ym) && !pending[key] ? " draft" : "")
+          + (row.input && pending[key] && !failed[key] ? " pend" : "") + (row.input && failed[key] ? " fail" : "");
+        var tip = who ? ' title="' + html(row.label + " · changed by " + who.by + " · " + who.at + " ET · v" + who.ver + " · " + who.chg) + '"' : "";
+        var shown = formatCell(row, v);
+        if (keep && keep.contract === active && keep.month === ym && keep.row === row.id) {
+          h += '<td class="' + cls + '"><input class="cell" data-row="' + row.id + '" data-month="' + ym + '" value="' + esc(shown) + '"/></td>';
+        } else if (row.input) {
+          h += '<td class="' + cls + '" data-edit="' + row.id + '" data-month="' + ym + '"' + tip + ">" + shown + "</td>";
+        } else {
+          h += '<td class="' + cls + '">' + shown + "</td>";
+        }
+      });
+      h += "</tr>";
+    });
+    h += "</tbody></table></div>";
+    if (panel === "history") h += historyPanel();
+    if (panel === "bulk") h += bulkPanel();
+    h += "</div>";
+    app.innerHTML = h;
+    var input = app.querySelector("input.cell");
+    if (input) { input.focus(); input.select(); }
+  }
+
+  function historyPanel() {
+    var h = '<div class="side"><div class="side-h"><b>History &amp; undo</b><button class="x" data-panel="close">×</button></div>';
+    if (!refId(bindings.history) && !history.length) {
+      return h + '<div class="empty">The history element is not bound to this grid.</div></div>';
+    }
+    if (pick) {
+      var key = active + "|" + pick;
+      var vs = versionsOf(key);
+      h += '<div class="crumb"><button class="link" data-unpick="1">← All change sets</button></div>';
+      h += '<div class="sub"><b>' + html(cname(active)) + " · " + label(pick) + "</b> · " + (vs.length ? vs.length + " saved version" + (vs.length === 1 ? "" : "s") : "starting file, never edited") + "</div>";
+      vs.forEach(function (r) {
+        h += '<div class="card' + (r.cur ? " cur" : "") + '"><div class="ch"><span class="chip">' + (r.cur ? "Current · v" : "v") + r.ver + '</span><span class="when">' + html(r.at) + " ET</span></div>"
+          + '<div class="who">' + html(r.by) + '</div><div class="chg">' + html(r.chg) + '</div><div class="what">' + html(r.what) + "</div>"
+          + (r.cur ? "" : '<button class="act" data-restore="' + html(r.id) + '">Restore this version</button>') + "</div>";
+      });
+      var seed = seedOf(active, pick);
+      var cur = state[active].months[pick];
+      if (seed && cur && !sameVals(pickVals(cur), pickVals(seed))) {
+        h += '<button class="act ghost" data-seed="' + pick + '">Back to the starting file for ' + label(pick) + "</button>";
+      }
+      return h + "</div>";
+    }
+    var sets = changeSets();
+    h += '<div class="sub">Newest first. A change set is one Save snapshot: the cells, paste, or Apply to many you had open. Undo writes new rows that put each month back to the version before that snapshot. Nothing is deleted.</div>';
+    if (!sets.length) h += '<div class="empty">No edits saved yet.</div>';
+    sets.slice(0, 40).forEach(function (cs) {
+      var contracts = Object.keys(cs.contracts).map(cname).join(", ");
+      var months = monthSpan(Object.keys(cs.months));
+      var cells = Object.keys(cs.keys).length;
+      var what = cs.rows.length === 1 ? cs.rows[0].what : cs.rows[0].what.split("; ").slice(0, 2).join("; ");
+      h += '<div class="card"><div class="ch"><span class="when">' + html(cs.at) + ' ET</span><span class="who-s">' + html(shortWho(cs.by)) + "</span></div>"
+        + '<div class="chg">' + html(cs.chg) + '</div><div class="scope">' + html(contracts) + " · " + html(months) + " · " + cells + (cells === 1 ? " month" : " months") + "</div>"
+        + '<div class="what">' + html(what) + "</div>";
+      if (confirmUndo === cs.id) {
+        var plan = undoPlan(cs);
+        h += '<div class="confirm">Writes ' + plan.rows.length + " new row" + (plan.rows.length === 1 ? "" : "s") + " back to the prior version" + (plan.rows.some(function (r) { return r.from === "seed"; }) ? " (or the starting file)" : "") + ".";
+        if (plan.later.length) {
+          h += " <b>" + plan.later.length + (plan.later.length === 1 ? " of these months was" : " of these months were") + " changed again later</b> (" + plan.later.slice(0, 3).map(function (r) { return label(r.month) + " by " + shortWho(r.by); }).join(", ") + "). Undo overwrites those too.";
+        }
+        h += '<div class="row2"><button class="act" data-undo-go="' + html(cs.id) + '">Undo it</button><button class="act ghost" data-undo-cancel="1">Cancel</button></div></div>';
+      } else {
+        h += '<button class="act" data-undo="' + html(cs.id) + '">Undo this change</button>';
+      }
+      h += "</div>";
+    });
+    return h + "</div>";
+  }
+
+  var BULK_FIELDS = ROWS.filter(function (r) { return r.input && r.id !== "idle"; });
+
+  function bulkDefaults() {
+    var fm = forecastMonths();
+    var from = fm.indexOf("2027-01") >= 0 ? "2027-01" : fm[0];
+    var c = {}; c[active] = true;
+    return { field: "inf", value: "", contracts: c, from: from, to: fm[fm.length - 1], both: true };
+  }
+
+  function bulkRows() {
+    if (!bulk) return { rows: [], same: 0 };
+    var row = BULK_FIELDS.filter(function (r) { return r.id === bulk.field; })[0];
+    var n = parseEdit(bulk.value);
+    if (!row || bulk.value === "" || n == null) return { rows: [], same: 0, bad: bulk.value !== "" };
+    var out = [], same = 0;
+    ORDER.forEach(function (cid) {
+      if (!bulk.contracts[cid]) return;
+      forecastMonths().forEach(function (ym) {
+        if (ym < bulk.from || ym > bulk.to) return;
+        var m = clone(state[cid].months[ym]);
+        applyEdit(m, row, bulk.value);
+        if (PAIRED[row.id] && bulk.both) m[PAIRED[row.id]] = m[row.id];
+        var before = pickVals(state[cid].months[ym]), after = pickVals(m);
+        if (sameVals(before, after)) { same++; return; }
+        out.push({ contract: cid, ym: ym, vals: after, before: before });
+      });
+    });
+    return { rows: out, same: same, row: row };
+  }
+
+  function bulkPanel() {
+    if (!bulk) bulk = bulkDefaults();
+    var fm = forecastMonths();
+    var h = '<div class="side"><div class="side-h"><b>Apply to many</b><button class="x" data-panel="close">×</button></div>';
+    h += '<div class="sub">One value for one input, across the contracts and forecast months you pick. This updates the grid only. Save snapshot writes the months that changed. Closed months are not offered.</div>';
+    h += '<label class="f">Input<select data-b="field">' + BULK_FIELDS.map(function (r) {
+      return '<option value="' + r.id + '"' + (r.id === bulk.field ? " selected" : "") + ">" + html(r.label) + (r.id.charAt(0) === "r" && r.id !== "res" ? " (reserve)" : "") + "</option>";
+    }).join("") + "</select></label>";
+    h += '<label class="f">Value<input data-b="value" value="' + html(bulk.value) + '" placeholder="e.g. 5"/></label>';
+    if (PAIRED[bulk.field]) h += '<label class="chk"><input type="checkbox" data-b="both"' + (bulk.both ? " checked" : "") + "/> Same value on the reserve side</label>";
+    h += '<div class="f">Contracts<div class="cks">' + ORDER.map(function (cid) {
+      return '<label class="chk"><input type="checkbox" data-bc="' + cid + '"' + (bulk.contracts[cid] ? " checked" : "") + "/> " + html(cname(cid)) + "</label>";
+    }).join("") + "</div></div>";
+    var opts = function (sel) { return fm.map(function (ym) { return '<option value="' + ym + '"' + (ym === sel ? " selected" : "") + ">" + label(ym) + "</option>"; }).join(""); };
+    h += '<div class="f2"><label class="f">From<select data-b="from">' + opts(bulk.from) + '</select></label><label class="f">To<select data-b="to">' + opts(bulk.to) + "</select></label></div>";
+    var plan = bulkRows();
+    if (plan.bad) h += '<div class="warn">That value is not a number.</div>';
+    else if (plan.rows.length || plan.same) {
+      var dRev = 0;
+      plan.rows.forEach(function (r) {
+        var a = calc(r.after || r.vals), b = calc(r.before);
+        dRev += (a.odRev + a.resRev) - (b.odRev + b.resRev);
+      });
+      h += '<div class="preview"><b>' + plan.rows.length + "</b> contract-month" + (plan.rows.length === 1 ? "" : "s") + " change" + (plan.same ? " · " + plan.same + " already at that value" : "")
+        + '<br/>Forecast revenue ' + (dRev >= 0 ? "+" : "−") + "$" + comma(Math.abs(dRev), 0).replace(/[()]/g, "") + "</div>";
+    }
+    h += '<button class="act" data-bulk-go="1"' + (plan.rows.length ? "" : " disabled") + ">Apply to the grid</button>";
+    return h + "</div>";
+  }
+
+  function kpi(labelText, value, sub, isPct) {
+    var neg = typeof value === "number" && value < 0;
+    var shown = value == null ? "–" : (isPct ? fmtPct(value) : (Math.abs(value) >= 1000 ? (neg ? "(" : "") + "$" + comma(Math.abs(value), 0).replace(/[()]/g, "") + (neg ? ")" : "") : fmtUsd(value)));
+    return '<div class="kpi"><div class="l">' + labelText + '</div><div class="v' + (neg ? " neg" : "") + '">' + shown + '</div><div class="l">' + sub + "</div></div>";
+  }
+  function esc(s) { return String(s).replace(/"/g, "&quot;"); }
+
+  /* ---------- events ---------- */
+
+  function setPick(ym) {
+    pick = ym;
+    setControl("pick", ym || "").catch(function () {});
+  }
+
+  function snapshotLabel(rows) {
+    var contracts = [];
+    rows.forEach(function (r) { if (contracts.indexOf(r.contract) < 0) contracts.push(r.contract); });
+    var who = contracts.map(cname).join(", ");
+    return "Snapshot · " + who + " · " + monthSpan(rows.map(function (r) { return r.ym; }));
+  }
+  function saveSnapshot() {
+    var rows = unsavedRows();
+    if (!rows.length) { note("Nothing new to save"); return; }
+    submit(rows, snapshotLabel(rows));
+  }
+  function discardEdits() {
+    unsavedRows().forEach(function (r) { applyVals(r.contract, r.ym, baseline(r.contract, r.ym)); });
+    note("Discarded unsaved edits");
+    render();
+  }
+  function blockIfUnsaved() {
+    if (!unsavedRows().length) return false;
+    note("Save snapshot or discard the open edits first");
+    return true;
+  }
+
+  function cellEditRow(cid, ym, rowId, raw) {
+    var row = ROWS.filter(function (r) { return r.id === rowId; })[0];
+    if (!row) return null;
+    var m = clone(state[cid].months[ym]);
+    var before = pickVals(m);
+    applyEdit(m, row, raw);
+    var after = pickVals(m);
+    if (sameVals(before, after)) return null;
+    var what = INPUT_KEYS.filter(function (k) { return !closeEnough(before[k], after[k]); })
+      .map(function (k) { return KEY_LABEL[k] + " " + before[k] + " → " + after[k]; }).join("; ");
+    return { contract: cid, ym: ym, vals: after, what: what };
+  }
+
+  var app = document.getElementById("app");
+  app.addEventListener("click", function (ev) {
+    var t = ev.target;
+    var snap = t.closest ? t.closest("#save-snap") : null;
+    if (t.id === "save-snap" || snap) { if (!(snap || t).disabled) saveSnapshot(); return; }
+    var drop = t.closest ? t.closest("#discard") : null;
+    if (t.id === "discard" || drop) { if (!(drop || t).disabled) discardEdits(); return; }
+    var tab = t.closest("[data-tab]");
+    if (tab) {
+      active = tab.getAttribute("data-tab");
+      editing = null; pick = null; confirmUndo = null;
+      if (bulk) { bulk.contracts = {}; bulk.contracts[active] = true; }
+      setControl("view", active).catch(function () {});
+      render();
+      return;
+    }
+    var p = t.closest("[data-panel]");
+    if (p) {
+      var which = p.getAttribute("data-panel");
+      panel = which === "close" || panel === which ? null : which;
+      confirmUndo = null;
+      render();
+      return;
+    }
+    var mh = t.closest("[data-pick]");
+    if (mh) {
+      var ym = mh.getAttribute("data-pick");
+      setPick(pick === ym ? null : ym);
+      panel = pick ? "history" : panel;
+      render();
+      return;
+    }
+    if (t.closest("[data-unpick]")) { setPick(null); render(); return; }
+    var u = t.closest("[data-undo]");
+    if (u) { confirmUndo = u.getAttribute("data-undo"); render(); return; }
+    if (t.closest("[data-undo-cancel]")) { confirmUndo = null; render(); return; }
+    var ug = t.closest("[data-undo-go]");
+    if (ug) {
+      if (blockIfUnsaved()) return;
+      var cs = changeSets().filter(function (c) { return c.id === ug.getAttribute("data-undo-go"); })[0];
+      confirmUndo = null;
+      if (cs) {
+        var plan = undoPlan(cs);
+        submit(plan.rows, "Undo " + cs.chg + " (" + cs.at + " ET, " + shortWho(cs.by) + ")");
+      }
+      return;
+    }
+    var rs = t.closest("[data-restore]");
+    if (rs) {
+      if (blockIfUnsaved()) return;
+      var r = history.filter(function (x) { return x.id === rs.getAttribute("data-restore"); })[0];
+      if (r) submit([{ contract: r.contract, ym: r.month, vals: clone(r.vals) }], "Restore v" + r.ver + " of " + label(r.month) + " (" + r.at + " ET, " + shortWho(r.by) + ")");
+      return;
+    }
+    var sd = t.closest("[data-seed]");
+    if (sd) {
+      if (blockIfUnsaved()) return;
+      var sm = sd.getAttribute("data-seed");
+      submit([{ contract: active, ym: sm, vals: pickVals(seedOf(active, sm)) }], "Back to starting file · " + label(sm));
+      return;
+    }
+    if (t.closest("[data-bulk-go]")) {
+      var plan2 = bulkRows();
+      if (!plan2.rows.length) return;
+      plan2.rows.forEach(function (r) { applyVals(r.contract, r.ym, r.vals); });
+      panel = null;
+      note(unsavedNote());
+      render();
+      return;
+    }
+    if (t.id === "reset") {
+      if (blockIfUnsaved()) return;
+      var rows = [];
+      MONTHS.forEach(function (ym) {
+        var s = pickVals(seedOf(active, ym));
+        if (!sameVals(pickVals(state[active].months[ym]), s)) rows.push({ contract: active, ym: ym, vals: s });
+      });
+      editing = null;
+      submit(rows, "Reset " + cname(active) + " to the starting file");
+      return;
+    }
+    var cell = t.closest("[data-edit]");
+    if (!cell) return;
+    editing = { contract: active, month: cell.getAttribute("data-month"), row: cell.getAttribute("data-edit") };
+    render();
+  });
+
+  app.addEventListener("input", function (ev) {
+    var b = ev.target.getAttribute && ev.target.getAttribute("data-b");
+    if (b === "value") { bulk.value = ev.target.value; refreshBulkPreview(); }
+  });
+  app.addEventListener("change", function (ev) {
+    var t = ev.target;
+    var b = t.getAttribute && t.getAttribute("data-b");
+    var bc = t.getAttribute && t.getAttribute("data-bc");
+    if (!bulk) return;
+    if (b === "field") bulk.field = t.value;
+    else if (b === "from") { bulk.from = t.value; if (bulk.to < bulk.from) bulk.to = bulk.from; }
+    else if (b === "to") { bulk.to = t.value; if (bulk.from > bulk.to) bulk.from = bulk.to; }
+    else if (b === "both") bulk.both = t.checked;
+    else if (bc) bulk.contracts[bc] = t.checked;
+    else return;
+    render();
+  });
+
+  // Keep focus in the value box while typing: redraw the panel only.
+  function refreshBulkPreview() {
+    var side = document.querySelector(".side");
+    if (!side) return;
+    var input = side.querySelector('[data-b="value"]');
+    var pos = input ? input.selectionStart : null;
+    var wrap = document.createElement("div");
+    wrap.innerHTML = bulkPanel();
+    side.parentNode.replaceChild(wrap.firstChild, side);
+    var again = document.querySelector('.side [data-b="value"]');
+    if (again) { again.focus(); if (pos != null) again.setSelectionRange(pos, pos); }
+  }
+
+  app.addEventListener("keydown", function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    if (ev.key === "Enter") { ev.target.blur(); }
+    if (ev.key === "Escape") { ignoreBlur = true; editing = null; render(); setTimeout(function () { ignoreBlur = false; }, 0); }
+  });
+  app.addEventListener("focusout", function (ev) {
+    if (ignoreBlur) { ignoreBlur = false; return; }
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    var rowId = ev.target.getAttribute("data-row");
+    var ym = ev.target.getAttribute("data-month");
+    var r = cellEditRow(active, ym, rowId, ev.target.value);
+    editing = null;
+    if (!r) { render(); return; }
+    applyVals(r.contract, r.ym, r.vals);
+    note(unsavedNote());
+    render();
+  });
+  window.addEventListener("keydown", function (ev) {
+    if ((ev.metaKey || ev.ctrlKey) && (ev.key === "s" || ev.key === "S")) {
+      ev.preventDefault();
+      saveSnapshot();
+    }
+  });
+
+  // Paste a block copied from Excel into the cell you are typing in. Lines go down the rows, tabs go across the months.
+  app.addEventListener("paste", function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    var text = (ev.clipboardData || window.clipboardData).getData("text");
+    if (!text || (text.indexOf("\t") < 0 && text.indexOf("\n") < 0)) return;
+    ev.preventDefault();
+    var lines = text.replace(/\r/g, "").replace(/\n+$/, "").split("\n").map(function (l) { return l.split("\t"); });
+    var r0 = ROWS.map(function (r) { return r.id; }).indexOf(ev.target.getAttribute("data-row"));
+    var m0 = MONTHS.indexOf(ev.target.getAttribute("data-month"));
+    var work = {}, touched = {};
+    lines.forEach(function (cells, i) {
+      var row = ROWS[r0 + i];
+      if (!row || !row.input) return;
+      cells.forEach(function (raw, j) {
+        var ym = MONTHS[m0 + j];
+        if (!ym || String(raw).trim() === "") return;
+        if (!work[ym]) work[ym] = clone(state[active].months[ym]);
+        applyEdit(work[ym], row, raw);
+        touched[row.label] = true;
+      });
+    });
+    var rows = Object.keys(work).sort().map(function (ym) { return { contract: active, ym: ym, vals: pickVals(work[ym]) }; })
+      .filter(function (r) { return !sameVals(r.vals, pickVals(state[active].months[r.ym])); });
+    ignoreBlur = true;
+    editing = null;
+    var width = Math.max.apply(null, lines.map(function (l) { return l.length; }));
+    setTimeout(function () { ignoreBlur = false; }, 0);
+    if (!rows.length) { render(); note("Nothing in that paste changes a blue cell"); return; }
+    rows.forEach(function (r) { applyVals(r.contract, r.ym, r.vals); });
+    note(unsavedNote() + " · pasted " + lines.length + "×" + width);
+    render();
+  });
+
+  if (client) {
+    try {
+      var cfgPanel = [
+        { name: "model", type: "variable", label: "Forecast model", allowedTypes: ["text"] },
+        { name: "view", type: "variable", label: "Contract on screen", allowedTypes: ["text"] },
+        { name: "onSave", type: "action-trigger", label: "Append forecast log (18 controls, fallback)" },
+        { name: "onRow", type: "action-trigger", label: "Append one forecast row (payload)" },
+        { name: "onRefresh", type: "action-trigger", label: "Refresh forecast read and history" },
+        { name: "base", type: "element", label: "Forecast seed" },
+        { name: "saved", type: "element" },
+        { name: "history", type: "element" },
+        { name: "c_payload", type: "variable", label: "Write row payload", allowedTypes: ["text"] },
+        { name: "c_action", type: "variable", label: "Write change label", allowedTypes: ["text"] },
+        { name: "c_batch", type: "variable", label: "Write change set id", allowedTypes: ["text"] },
+        { name: "c_pick", type: "variable", label: "Picked month", allowedTypes: ["text"] }
+      ];
+      ["contract", "month", "name", "title", "forecast"].concat(INPUT_KEYS).forEach(function (k) {
+        cfgPanel.push({ name: "b_" + k, type: "column", source: "base", label: "Seed " + k });
+      });
+      ["contract", "month"].concat(INPUT_KEYS).forEach(function (k) {
+        cfgPanel.push({ name: "c_" + k, type: "variable", label: "Write " + k, allowedTypes: ["text"] });
+        cfgPanel.push({ name: "d_" + k, type: "column", source: "saved", label: "Read " + k });
+      });
+      ["row", "contract", "month", "ver", "cur", "by", "attxt", "chg", "batch", "what"].concat(INPUT_KEYS).forEach(function (k) {
+        cfgPanel.push({ name: "h_" + k, type: "column", source: "history", label: "History " + k });
+      });
+      client.config.configureEditorPanel(cfgPanel);
+    } catch (e) {}
+    client.config.subscribe(function (cfg) {
+      bindings = cfg || {};
+      if (!client.elements || !client.elements.subscribeToElementData) return;
+      [[refId(bindings.base), applyBase], [refId(bindings.saved), applySaved], [refId(bindings.history), applyHistory]].forEach(function (pair) {
+        var id = pair[0];
+        if (!id || wiredSaved[id]) return;
+        wiredSaved[id] = true;
+        try { client.elements.subscribeToElementData(id, pair[1]); } catch (e) {}
+      });
+    });
+  }
+
+  saveNote = client ? "Loading the starting file from the workbook…" : "No forecast seed is connected";
+  render();
+})();
+
+</script>
+</body>
+</html>
