@@ -471,8 +471,7 @@
     if (!client) { note("In this browser only"); return; }
     note("Writing to Redshift…");
     logQueue = logQueue.then(function () { return writeOne(contractId, ym); }).then(function () {
-      var left = Object.keys(pending).length;
-      note(left ? ("Written to Redshift — waiting for " + left + (left === 1 ? " month" : " months")) : "Saved in Redshift");
+      note("Saved in Redshift");
     }, function (err) {
       note(err && err.message ? err.message : "Redshift did not take that edit");
     });
