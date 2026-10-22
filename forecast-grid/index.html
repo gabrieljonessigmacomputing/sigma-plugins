@@ -319,7 +319,7 @@
       + kpi("Gross profit", tot.gp, "all-in, forecast months")
       + kpi("Margin", tot.margin == null ? null : tot.margin * 100, "gross profit ÷ revenue", true)
       + "</div>";
-    html += '<div class="note"><span class="dot">Blue</span> cells are what he types. Price = cost × (1 + premium). Revenue = hours × price, including Slurm, inference and orchestration. Gross profit (all-in) charges cost on every committed hour, idle included. The heavy line is September: actuals on the left, forecast on the right.</div>';
+    html += '<div class="note"><span class="dot">Blue</span> cells are what he types. Price = cost × (1 + premium). Revenue = hours × price, with Slurm, inference and orchestration on top. Gross profit (all-in) is revenue minus cost on every committed hour, idle included. Cash deposit and capex stay on the sheet and out of that profit, which is how his totals tie. The heavy line is September: actuals on the left, forecast on the right. Massed Compute is his file. Alibaba and GCore are starter tabs.</div>';
     html += '<div class="sheet"><table><thead><tr><th class="lab"></th>';
     MONTHS.forEach(function (ym) {
       var fc = ym > ACTUAL_LAST;
