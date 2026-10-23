@@ -467,10 +467,28 @@
     return seq.then(function () { return triggerSave(); });
   }
 
+  function waitUntilSaved(key) {
+    return new Promise(function (resolve, reject) {
+      var started = Date.now();
+      (function tick() {
+        if (!pending[key]) return resolve();
+        if (Date.now() - started > 30000) {
+          return reject(new Error("Redshift did not show that edit on the sheet"));
+        }
+        setTimeout(tick, 500);
+      })();
+    });
+  }
+
   function enqueueLog(contractId, ym) {
     if (!client) { note("In this browser only"); return; }
     note("Writing to Redshift…");
+    var key = contractId + "|" + ym;
     logQueue = logQueue.then(function () { return writeOne(contractId, ym); }).then(function () {
+      // The host ack only means Sigma accepted the action. The row counts when Forecast Read shows it.
+      note("Written to Redshift — waiting for the sheet");
+      return waitUntilSaved(key);
+    }).then(function () {
       note("Saved in Redshift");
     }, function (err) {
       note(err && err.message ? err.message : "Redshift did not take that edit");
