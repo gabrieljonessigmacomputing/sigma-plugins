@@ -705,6 +705,7 @@
   function applySaved(raw) {
     var data = unwrapData(raw);
     if (!data || !state) return;
+    if (saveNote.indexOf("Loading saved forecast") === 0) note("Type a blue cell");
     var contracts = column(data, "contract");
     var months = column(data, "month");
     if (!contracts || !contracts.length || !months) return;
@@ -1134,7 +1135,7 @@
   }
 
   state = clone(SEED);
-  saveNote = client ? "Type a blue cell" : "Preview";
+  saveNote = client ? "Loading saved forecast from Redshift…" : "Preview";
   render();
 })();
 
