@@ -174,6 +174,9 @@
   }
   function applyGrid(obj) {
     if (!obj || !obj.years) return;
+    // A later echo of the starting file must not wipe an edit that was just saved.
+    if (state.dirty && state.base && obj.investment_id === state.base.investment_id
+        && obj.scenario === state.base.scenario && obj.quarter === state.base.quarter && obj.change_set == state.base.change_set) return;
     state.base = obj;
     state.sqlYears = obj.years;
     state.drivers = driversFrom(obj.years);
@@ -330,7 +333,8 @@
       return setPayload(packed.text).then(function () { return waitEcho(packed.id, 2000); }).then(function () { return triggerSave(); })
         .then(function () { return waitLog(packed.id, 20000); })
         .then(function (ok) {
-          saveNote = ok ? "Saved to the projection log · waiting for the recomputed return" : "The log did not show that save";
+          if (ok) pendingId = null;
+          saveNote = ok ? "Saved. This grid is your edit. The table below is the Databricks starting file." : "The log did not show that save";
           render();
         });
     }).catch(function (err) { saveNote = err && err.message ? err.message : "Sigma did not take that edit"; render(); });
