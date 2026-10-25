@@ -582,7 +582,7 @@
         if (pid && client.subscribeToWorkbookVariable && !wired["var:" + pid]) {
           wired["var:" + pid] = true;
           client.subscribeToWorkbookVariable(pid, function (val) {
-            if (!val || String(val).indexOf('"origin":"agent"') < 0) return;
+            if (!val || !/"origin"\s*:\s*"agent"/.test(String(val))) return;
             try {
               var obj = JSON.parse(val);
               if (!obj.drivers || obj.id === pendingId) return;
