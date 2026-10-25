@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Calder Peak projection</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/@sigmacomputing/plugin@1.3.2/dist/umd/sigmacomputing-plugin.umd.js"></script>
+<style>
+  :root { --ink:#1F2933; --navy:#12263A; --copper:#B8733C; --blue:#1D4E89; --line:#DCE1E6; --paper:#fff;
+    --input:#F4F7FB; --green:#2E7D4F; --muted:#5F6B7A; --rose:#FDE4E1; --breach:#B42318; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; background:#fff; color:var(--ink);
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  #app { height:100%; display:flex; flex-direction:column; padding:8px 10px 6px; gap:6px; }
+  .top { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
+  .who { font-size:13px; font-weight:650; color:var(--navy); }
+  .who span { color:var(--muted); font-weight:500; }
+  .tools { display:flex; gap:6px; }
+  .tool { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:7px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; }
+  .tool.on, .tool:hover { border-color:var(--navy); color:var(--navy); }
+  .meta { text-align:right; font-size:11px; color:var(--muted); line-height:1.35; }
+  .meta b { color:var(--ink); }
+  .kpis { display:flex; gap:8px; }
+  .kpi { background:#F4F5F7; border:1px solid var(--line); border-radius:8px; padding:6px 10px 7px; min-width:120px; }
+  .kpi .l { font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+  .kpi .v { font-size:16px; font-weight:680; font-variant-numeric:tabular-nums; margin-top:1px; color:var(--navy); }
+  .kpi .v.bad { color:var(--breach); }
+  .note { font-size:11px; color:var(--muted); }
+  .note .dot { color:var(--blue); font-weight:700; }
+  .body { flex:1; min-height:0; display:flex; gap:8px; }
+  .sheet { flex:1; min-height:0; overflow:auto; border:1px solid var(--line); border-radius:8px; }
+  table { border-collapse:separate; border-spacing:0; font-size:12px; font-variant-numeric:tabular-nums; }
+  th, td { border-bottom:1px solid var(--line); border-right:1px solid #f0f2f4; padding:0; height:26px; white-space:nowrap; }
+  th.lab, td.lab { position:sticky; left:0; z-index:2; background:#fff; text-align:left; min-width:210px; max-width:230px; padding:0 8px; font-weight:500; border-right:1px solid #d9d9e0; }
+  thead th { position:sticky; top:0; z-index:3; background:var(--navy); color:#fff; font-weight:650; font-size:11px; height:28px; text-align:right; padding:0 8px; }
+  thead th.lab { z-index:4; background:#0d1b2a; text-align:left; }
+  thead th.exit { background:var(--copper); }
+  td.num { text-align:right; min-width:88px; padding:0 8px; }
+  td.in { color:var(--blue); background:var(--input); cursor:text; font-weight:650; }
+  td.lock { color:#8b95a1; background:#fafafa; }
+  td.strong { font-weight:700; }
+  td.breach { background:var(--rose); color:var(--breach); font-weight:700; }
+  tr.gap td { height:8px; background:#fafafa; border-bottom:0; }
+  input.cell { width:100%; height:26px; border:2px solid var(--copper); margin:0; padding:0 6px; text-align:right; font:inherit; font-weight:650; color:var(--blue); background:#fff; outline:none; }
+  button.link { border:0; background:none; color:var(--muted); font-size:11px; cursor:pointer; padding:0; text-decoration:underline; }
+  .side { width:300px; flex:none; overflow:auto; border:1px solid var(--line); border-radius:8px; background:#fbfbfd; padding:8px 10px; font-size:12px; }
+  .side-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .x { border:0; background:none; font-size:18px; cursor:pointer; color:var(--muted); }
+  .sub { color:var(--muted); font-size:11px; line-height:1.4; margin:0 0 8px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:7px 9px; margin-bottom:6px; }
+  .act { margin-top:6px; border:0; background:var(--navy); color:#fff; border-radius:6px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; }
+  .act[disabled] { opacity:.45; cursor:default; }
+  .f { display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--muted); margin-bottom:8px; }
+  .f select, .f input { font:inherit; font-size:12px; color:var(--ink); padding:5px 6px; border:1px solid #d9d9e0; border-radius:6px; background:#fff; }
+  .f2 { display:flex; gap:8px; }
+  .empty { color:var(--muted); padding:8px 0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function () {
+  var client = (window.SigmaPlugin && window.SigmaPlugin.client)
+    || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client);
+  var YEARS = [2026, 2027, 2028, 2029, 2030];
+  var KEYS = ["rev_g", "margin", "capex", "sweep", "div", "ebitda_override", "is_exit", "exit_mult", "nd_override"];
+  var ROWS = [
+    {id:"rev_g", label:"Revenue growth %", input:true, pct:true, ops:true},
+    {id:"revenue", label:"Revenue ($m)", money:true},
+    {id:"margin", label:"EBITDA margin %", input:true, pct:true, ops:true},
+    {id:"ebitda_override", label:"EBITDA override ($m)", input:true, money:true, optional:true},
+    {id:"ebitda", label:"EBITDA ($m)", money:true, strong:true},
+    {id:"capex", label:"Capex % of revenue", input:true, pct:true, ops:true},
+    {id:"fcf", label:"Free cash flow ($m)", money:true},
+    {id:"sweep", label:"Debt paydown % of free cash flow", input:true, pct:true, ops:true},
+    {id:"div", label:"Dividends / recaps ($m)", input:true, money:true, ops:true},
+    {id:"net_debt", label:"Net debt, year end ($m)", money:true, strong:true},
+    {id:"leverage", label:"Net leverage", x:true},
+    {id:"covenant", label:"Covenant max", x:true},
+    {gap:true},
+    {id:"is_exit", label:"Exit this year", input:true, flag:true},
+    {id:"exit_mult", label:"Exit multiple", input:true, mult:true},
+    {id:"nd_override", label:"Exit net debt override ($m)", input:true, money:true, optional:true},
+    {id:"exit_ev", label:"Exit EV ($m)", money:true},
+    {id:"exit_equity", label:"Exit equity, 100% ($m)", money:true},
+    {id:"proceeds", label:"Fund proceeds ($m)", money:true, strong:true}
+  ];
+  var state = { base:null, drivers:null, sqlYears:null, summary:null, dirty:false, seed:null };
+  var history = [], bindings = {}, wired = {}, editing = null, panel = null, bulk = null, saveNote = "Loading the starting file…";
+  var echoes = [], seenHost = [], hostChain = Promise.resolve(), logQueue = Promise.resolve(), ignoreBlur = false, pendingId = null;
+
+  function num(v) { var n = Number(v); return isFinite(n) ? n : null; }
+  function get(map, fy) { if (!map) return null; var v = map[fy]; return v == null || v === "" ? null : num(v); }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  /* Same recurrence as sql/06_projection.sql. IRR here is a preview. The workbook number is pe_xirr. */
+  function project(base, drivers) {
+    var revYear = Number(String(base.measurement_date).slice(0, 4));
+    var prevRev = num(base.ltm_revenue), prevNd = num(base.net_debt);
+    var years = [], exitFy = null;
+    YEARS.forEach(function (fy) {
+      if (get(drivers.is_exit, fy) === 1 && exitFy == null) exitFy = fy;
+    });
+    YEARS.forEach(function (fy) {
+      var g = get(drivers.rev_g, fy);
+      var revenue = fy <= revYear ? num(base.ltm_revenue) : prevRev * (1 + (g == null ? 0 : Math.max(-0.9, Math.min(5, g))));
+      if (fy > revYear) prevRev = revenue;
+      var margin = get(drivers.margin, fy);
+      var ov = get(drivers.ebitda_override, fy);
+      var ebitda = ov != null ? ov : (fy <= revYear ? num(base.ltm_ebitda) : (revenue == null || margin == null ? null : revenue * margin));
+      var capex = get(drivers.capex, fy);
+      var fcf = ebitda == null || revenue == null ? null : ebitda - revenue * (capex || 0);
+      var sweep = get(drivers.sweep, fy) || 0;
+      var div = get(drivers.div, fy) || 0;
+      var nd = fy <= revYear ? num(base.net_debt) : (prevNd == null || fcf == null ? null : prevNd - sweep * fcf + div);
+      if (fy > revYear && nd != null) prevNd = nd;
+      var isExit = fy === exitFy;
+      var mult = isExit ? get(drivers.exit_mult, fy) : null;
+      var ndOv = isExit ? get(drivers.nd_override, fy) : null;
+      var ndExit = ndOv != null ? ndOv : nd;
+      var exitEv = isExit && ebitda != null && mult != null ? ebitda * mult : null;
+      var exitEq = exitEv != null && ndExit != null ? exitEv - ndExit : null;
+      var proceeds = exitEq != null && base.ownership != null ? exitEq * num(base.ownership) : null;
+      var cov = null;
+      (state.sqlYears || []).forEach(function (s) { if (Number(s.fy) === fy) cov = num(s.covenant); });
+      var levNd = (get(drivers.nd_override, fy) != null ? get(drivers.nd_override, fy) : nd);
+      var lev = ebitda ? levNd / ebitda : null;
+      years.push({fy:fy, rev_g:g, margin:margin, capex:capex, sweep:get(drivers.sweep, fy), div:get(drivers.div, fy),
+        ebitda_override:ov, is_exit:isExit ? 1 : 0, exit_mult:get(drivers.exit_mult, fy), nd_override:get(drivers.nd_override, fy),
+        revenue:revenue, ebitda:ebitda, fcf:fcf, net_debt:nd, leverage:lev, covenant:cov,
+        is_breach: lev != null && cov != null && lev > cov ? 1 : 0,
+        exit_ev:exitEv, exit_equity:exitEq, proceeds:proceeds, year_ending: (state.sqlYears || []).filter(function (s) { return Number(s.fy) === fy; }).map(function (s) { return s.year_ending; })[0] || null});
+    });
+    var exit = years.filter(function (y) { return y.fy === exitFy; })[0] || null;
+    var proceeds = exit ? exit.proceeds : null;
+    var moic = proceeds != null && num(base.invested) ? (num(base.realized) + proceeds) / num(base.invested) : null;
+    var irr = null, status = "Not computable: no exit year";
+    if (!exit) status = "Not computable: no exit year";
+    else if (proceeds == null) status = "Not computable: LTM EBITDA is not known at this review cutoff";
+    else if (exit.exit_equity <= 0) status = "Unsupported: exit equity is zero or negative";
+    else { irr = xirr(flows(base, years, exit)); status = irr == null ? "NO_ROOT" : "OK"; }
+    var breach = years.filter(function (y) { return y.is_breach && y.fy > revYear; })[0];
+    return {years:years, summary:{exit_fy:exitFy, proceeds:proceeds, moic:moic, irr:irr, status:status, first_breach_fy: breach ? breach.fy : null, source:"Preview"}};
+  }
+
+  function flows(base, years, exit) {
+    var pairs = String(base.hist_pairs || "").split(",").filter(Boolean).map(parsePair).filter(Boolean);
+    years.forEach(function (y) {
+      if (y.fy > Number(String(base.measurement_date).slice(0, 4)) && y.fy <= exit.fy && y.div && y.year_ending)
+        pairs.push([y.year_ending.slice(0, 10), y.div * num(base.ownership)]);
+    });
+    var when = exit.year_ending ? exit.year_ending.slice(0, 10) : (exit.fy + "-06-30");
+    pairs.push([when, exit.proceeds]);
+    return pairs;
+  }
+  function parsePair(s) { var p = String(s).split("|"); var d = p[0], a = Number(p[1]); return isFinite(a) ? [d.slice(0, 10), a] : null; }
+  function xirr(pairs) {
+    if (!pairs.length) return null;
+    var d0 = pairs.map(function (p) { return p[0]; }).sort()[0];
+    function npv(r) { return pairs.reduce(function (s, p) { return s + p[1] / Math.pow(1 + r, (Date.parse(p[0]) - Date.parse(d0)) / 86400000 / 365); }, 0); }
+    var lo = -0.99, hi = 10;
+    if (npv(lo) * npv(hi) > 0) return null;
+    for (var i = 0; i < 80; i++) { var m = (lo + hi) / 2; if (npv(lo) * npv(m) <= 0) hi = m; else lo = m; }
+    return (lo + hi) / 2;
+  }
+
+  function driversFrom(years) {
+    var d = {}; KEYS.forEach(function (k) { d[k] = {}; });
+    (years || []).forEach(function (y) {
+      KEYS.forEach(function (k) { var src = k === "capex" ? "capex" : k; if (y[src] != null && y[src] !== "") d[k][y.fy] = Number(y[src]); });
+    });
+    return d;
+  }
+  function applyGrid(obj) {
+    if (!obj || !obj.years) return;
+    state.base = obj;
+    state.sqlYears = obj.years;
+    state.drivers = driversFrom(obj.years);
+    state.summary = obj;
+    state.dirty = false;
+    if (!state.seed || state.seed.key !== obj.investment_id + "|" + obj.scenario + "|" + obj.quarter) {
+      if (obj.source === "Seed" || obj.source == null) state.seed = {key: obj.investment_id + "|" + obj.scenario + "|" + obj.quarter, drivers: clone(state.drivers)};
+    }
+    if (saveNote.indexOf("Loading") === 0) saveNote = "Blue cells are inputs. Save writes the whole grid once.";
+    if (pendingId && obj.change_set === pendingId) { pendingId = null; saveNote = "Saved · Databricks recomputed this scenario"; }
+  }
+
+  function shownYears() {
+    if (!state.base) return [];
+    if (!state.dirty && state.sqlYears) return state.sqlYears.map(function (y) {
+      return {fy:Number(y.fy), revenue:num(y.revenue), ebitda:num(y.ebitda), fcf:num(y.fcf), net_debt:num(y.net_debt),
+        leverage:num(y.leverage), covenant:num(y.covenant), is_breach:Number(y.is_breach) || 0, is_exit:Number(y.is_exit) || 0,
+        exit_mult:num(y.exit_mult), nd_override:num(y.nd_override), ebitda_override:num(y.ebitda_override),
+        rev_g:num(y.rev_g), margin:num(y.margin), capex:num(y.capex), sweep:num(y.sweep), div:num(y.div),
+        exit_ev:num(y.exit_ev), exit_equity:num(y.exit_equity), proceeds:num(y.proceeds), year_ending:y.year_ending};
+    });
+    return project(state.base, state.drivers).years;
+  }
+  function shownSummary() {
+    if (!state.dirty && state.summary) return state.summary;
+    if (!state.base) return {};
+    return project(state.base, state.drivers).summary;
+  }
+
+  function fmtPct(n) { return n == null ? "" : (n * 100).toFixed(1) + "%"; }
+  function fmtMoney(n) { return n == null ? "" : (Math.round(n * 10) / 10).toFixed(1); }
+  function fmtX(n) { return n == null ? "" : n.toFixed(2) + "x"; }
+  function fmtIrr(n) { return n == null ? "—" : (n * 100).toFixed(2) + "%"; }
+  function cellText(row, y) {
+    var v = y[row.id];
+    if (row.flag) return v ? "Exit" : "";
+    if (row.pct) return fmtPct(v);
+    if (row.mult) return v == null ? "" : Number(v).toFixed(1) + "x";
+    if (row.x) return v == null ? "" : Number(v).toFixed(2) + "x";
+    if (row.money || row.id === "revenue" || row.id === "ebitda" || row.id === "fcf" || row.id === "net_debt" || row.id === "exit_ev" || row.id === "exit_equity" || row.id === "proceeds")
+      return fmtMoney(v);
+    return v == null ? "" : String(v);
+  }
+  function parseRaw(row, raw) {
+    var s = String(raw == null ? "" : raw).trim().replace(/,/g, "").replace(/x$/i, "");
+    if (s === "") return null;
+    var pct = /%$/.test(s); s = s.replace(/%$/, "");
+    var n = Number(s);
+    if (!isFinite(n)) return null;
+    if (row.pct && (pct || Math.abs(n) > 1)) return n / 100;
+    return n;
+  }
+  function html(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  /* ---------- one payload, one insert, one refresh ---------- */
+  function hostError(err) {
+    if (!err) return "Sigma did not take that edit";
+    if (typeof err === "string") return err;
+    try { return JSON.stringify(err); } catch (e) { return "Sigma did not take that edit"; }
+  }
+  function hostSend(type, send, timeoutMs) {
+    var run = function () {
+      return new Promise(function (resolve, reject) {
+        var settled = false;
+        var timer = setTimeout(function () { finish(new Error("Sigma did not confirm the write")); }, timeoutMs || 8000);
+        function finish(err, value) {
+          if (settled) return; settled = true; clearTimeout(timer); window.removeEventListener("message", onMsg);
+          if (err) reject(err); else resolve(value);
+        }
+        function onMsg(ev) {
+          var data = ev.data;
+          if (!data || data.type !== type) return;
+          seenHost.push(data.type);
+          if (data.error) finish(new Error(hostError(data.error))); else finish(null, data.result);
+        }
+        window.addEventListener("message", onMsg);
+        try { send(); } catch (e) { finish(e); }
+      });
+    };
+    var next = hostChain.then(run, run);
+    hostChain = next.then(function () {}, function () {});
+    return next;
+  }
+  function refId(v) {
+    if (!v) return null;
+    if (typeof v === "string") return v;
+    return v.controlId || v.columnId || v.elementId || v.actionTriggerId || v.id || null;
+  }
+  window.addEventListener("message", function (ev) {
+    try { echoes.push(JSON.stringify(ev.data)); } catch (e) {}
+    if (echoes.length > 40) echoes.shift();
+  });
+  function waitEcho(token, ms) {
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      (function tick() {
+        if (echoes.some(function (e) { return e.indexOf(token) >= 0; })) return resolve(true);
+        if (Date.now() - start > ms) return resolve(false);
+        setTimeout(tick, 60);
+      })();
+    });
+  }
+  function setPayload(text) {
+    var id = refId(bindings.payload) || "payload";
+    if (!client || !client.config || !client.config.setVariable) return Promise.reject(new Error("This grid is not inside Sigma"));
+    return hostSend("wb:plugin:variable:set", function () { client.config.setVariable(id, text); }, 8000);
+  }
+  function triggerSave() {
+    var id = refId(bindings.onSave) || "onSave";
+    if (!client || !client.config || !client.config.triggerAction) return Promise.reject(new Error("This grid is not inside Sigma"));
+    return hostSend("wb:plugin:action-trigger:invoke", function () { client.config.triggerAction(id); }, 25000);
+  }
+  function nonce() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function payloadFor(drivers, label) {
+    var id = "cs-" + nonce();
+    var packed = {};
+    KEYS.forEach(function (k) {
+      packed[k] = {};
+      YEARS.forEach(function (fy) { if (drivers[k] && drivers[k][fy] != null && drivers[k][fy] !== "") packed[k][String(fy)] = Number(drivers[k][fy]); });
+    });
+    return {id:id, text:JSON.stringify({
+      v:1, id:id, origin:"grid",
+      investment_id: state.base.investment_id, company: state.base.company,
+      review_quarter: state.base.quarter, measurement_date: state.base.measurement_date,
+      scenario: state.base.scenario, label: String(label || "Edit").slice(0, 180),
+      acting_as: personaName(), drivers: packed
+    })};
+  }
+  function personaName() {
+    try {
+      var id = refId(bindings.persona);
+      if (client && client.getVariable && id) { var v = client.getVariable(id); if (v) return String(v); }
+    } catch (e) {}
+    return "";
+  }
+  function logHas(id) { return history.some(function (h) { return h.payload && h.payload.indexOf(id) >= 0; }); }
+  function waitLog(id, ms) {
+    return new Promise(function (resolve) {
+      var start = Date.now();
+      (function tick() {
+        if (logHas(id)) return resolve(true);
+        if (Date.now() - start > ms) return resolve(false);
+        setTimeout(tick, 400);
+      })();
+    });
+  }
+  function save(drivers, label) {
+    if (!client) { state.drivers = drivers; state.dirty = true; saveNote = "Preview only · not saved"; render(); return; }
+    if (!state.base) return;
+    var packed = payloadFor(drivers, label);
+    pendingId = packed.id;
+    state.drivers = drivers; state.dirty = true; saveNote = "Saving one snapshot…"; render();
+    logQueue = logQueue.then(function () {
+      return setPayload(packed.text).then(function () { return waitEcho(packed.id, 2000); }).then(function () { return triggerSave(); })
+        .then(function () { return waitLog(packed.id, 20000); })
+        .then(function (ok) {
+          saveNote = ok ? "Saved to the projection log · waiting for the recomputed return" : "The log did not show that save";
+          render();
+        });
+    }).catch(function (err) { saveNote = err && err.message ? err.message : "Sigma did not take that edit"; render(); });
+  }
+
+  function note(t) { saveNote = t; var el = document.getElementById("status"); if (el) el.textContent = t; }
+
+  function render() {
+    var app = document.getElementById("app");
+    if (!state.base) { app.innerHTML = '<div class="empty">' + html(saveNote) + "</div>"; return; }
+    var years = shownYears();
+    var sum = shownSummary();
+    var revYear = Number(String(state.base.measurement_date).slice(0, 4));
+    var h = '<div class="top"><div><div class="who">' + html(state.base.company) + ' <span>· ' + html(state.base.scenario) + " · " + html(state.base.quarter) + "</span></div></div>";
+    h += '<div class="tools"><button class="tool" id="save">Save snapshot</button><button class="tool' + (panel === "bulk" ? " on" : "") + '" data-panel="bulk">Apply to many</button>';
+    h += '<button class="tool' + (panel === "history" ? " on" : "") + '" data-panel="history">History &amp; undo</button></div>';
+    h += '<div class="meta"><b>Projection</b><div id="status">' + html(saveNote) + '</div></div></div>';
+    h += '<div class="kpis">';
+    h += kpi("Fund proceeds", sum.proceeds == null ? "—" : "$" + fmtMoney(sum.proceeds) + "m", state.dirty ? "preview" : "gross, from pe_xirr");
+    h += kpi("Gross MOIC", sum.moic == null ? "—" : Number(sum.moic).toFixed(3) + "x", "realized + proceeds");
+    h += kpi("Gross IRR", fmtIrr(sum.irr), state.dirty ? "preview · ACT/365" : (sum.status || "gross"));
+    h += kpi("IRR today", fmtIrr(state.base.gross_irr_today), "reported mark");
+    h += kpi("First breach", sum.first_breach_fy ? ("FY" + sum.first_breach_fy) : "None in the grid", "review case on the forecast", !!sum.first_breach_fy);
+    h += "</div>";
+    h += '<div class="note"><span class="dot">Blue</span> cells are inputs. Type a cell, paste a block from Excel, or apply one value across years. Each save appends one snapshot of the whole grid. Returns are gross, before fees and carry. The forecast is a model, not a mark.</div>';
+    h += '<div class="body"><div class="sheet"><table><thead><tr><th class="lab">FY' + revYear + " is the review</th>";
+    YEARS.forEach(function (fy) {
+      var exit = years.some(function (y) { return Number(y.fy) === fy && y.is_exit; });
+      h += '<th class="' + (exit ? "exit" : "") + '">FY' + fy + (exit ? " · exit" : "") + "</th>";
+    });
+    h += "</tr></thead><tbody>";
+    ROWS.forEach(function (row) {
+      if (row.gap) { h += '<tr class="gap"><td class="lab"></td>' + YEARS.map(function () { return "<td></td>"; }).join("") + "</tr>"; return; }
+      h += '<tr><td class="lab">' + row.label + "</td>";
+      YEARS.forEach(function (fy) {
+        var y = years.filter(function (r) { return Number(r.fy) === fy; })[0] || {fy:fy};
+        var locked = row.ops && fy <= revYear;
+        var breach = row.id === "leverage" && y.is_breach && fy > revYear;
+        var cls = "num" + (row.input && !locked ? " in" : "") + (locked ? " lock" : "") + (row.strong ? " strong" : "") + (breach ? " breach" : "");
+        var text = cellText(row, y);
+        if (editing && editing.fy === fy && editing.row === row.id) {
+          h += '<td class="' + cls + '"><input class="cell" data-row="' + row.id + '" data-fy="' + fy + '" value="' + html(text) + '"/></td>';
+        } else if (row.input && !locked) {
+          h += '<td class="' + cls + '" data-edit="' + row.id + '" data-fy="' + fy + '">' + html(text) + "</td>";
+        } else h += '<td class="' + cls + '">' + html(text) + "</td>";
+      });
+      h += "</tr>";
+    });
+    h += "</tbody></table></div>";
+    if (panel === "history") h += historyPanel();
+    if (panel === "bulk") h += bulkPanel(revYear);
+    h += "</div>";
+    app.innerHTML = h;
+    var input = app.querySelector("input.cell");
+    if (input) { input.focus(); input.select(); }
+  }
+  function kpi(label, value, sub, bad) {
+    return '<div class="kpi"><div class="l">' + label + '</div><div class="v' + (bad ? " bad" : "") + '">' + html(value) + '</div><div class="l">' + html(sub) + "</div></div>";
+  }
+  function historyPanel() {
+    var h = '<div class="side"><div class="side-h"><b>History &amp; undo</b><button class="x" data-panel="close">×</button></div>';
+    h += '<div class="sub">Each save is one new row. Undo appends the earlier snapshot again. Nothing is deleted.</div>';
+    if (state.seed) h += '<button class="act" data-seed="1">Back to the starting file</button>';
+    var rows = history.filter(function (r) { return r.obj && r.obj.investment_id === state.base.investment_id && r.obj.scenario === state.base.scenario; });
+    if (!rows.length) h += '<div class="empty">No edits saved yet.</div>';
+    rows.slice(0, 30).forEach(function (r) {
+      h += '<div class="card"><b>' + html(r.obj.label || "Edit") + '</b><div class="sub">' + html((r.obj && r.obj.acting_as) || r.by || "") + " · " + html(r.at || "") + "</div>";
+      h += '<button class="act" data-restore="' + html(r.obj.id) + '">Restore this snapshot</button></div>';
+    });
+    return h + "</div>";
+  }
+  function bulkPanel(revYear) {
+    if (!bulk) bulk = {field:"margin", value:"", from: revYear + 1, to: 2030};
+    var inputs = ROWS.filter(function (r) { return r.input && !r.flag; });
+    var h = '<div class="side"><div class="side-h"><b>Apply to many</b><button class="x" data-panel="close">×</button></div>';
+    h += '<div class="sub">One value, across the years you pick. Saves once, as one snapshot.</div>';
+    h += '<label class="f">Input<select data-b="field">' + inputs.map(function (r) {
+      return '<option value="' + r.id + '"' + (r.id === bulk.field ? " selected" : "") + ">" + html(r.label) + "</option>";
+    }).join("") + "</select></label>";
+    h += '<label class="f">Value<input data-b="value" value="' + html(bulk.value) + '" placeholder="5 for 5%, or 50"/></label>';
+    var opts = YEARS.filter(function (y) { return y > revYear; }).map(function (y) { return '<option value="' + y + '">FY' + y + "</option>"; }).join("");
+    h += '<div class="f2"><label class="f">From<select data-b="from">' + opts.replace('value="' + bulk.from + '"', 'value="' + bulk.from + '" selected') + '</select></label>';
+    h += '<label class="f">To<select data-b="to">' + opts.replace('value="' + bulk.to + '"', 'value="' + bulk.to + '" selected') + "</select></label></div>";
+    h += '<button class="act" data-bulk="1">Apply and save</button></div>';
+    return h;
+  }
+
+  var app = document.getElementById("app");
+  app.addEventListener("click", function (ev) {
+    var t = ev.target;
+    if (t.id === "save" || (t.closest && t.closest("#save"))) { save(clone(state.drivers), state.dirty ? "Saved snapshot" : "Saved snapshot"); return; }
+    var p = t.closest("[data-panel]");
+    if (p) { var which = p.getAttribute("data-panel"); panel = which === "close" || panel === which ? null : which; render(); return; }
+    if (t.closest("[data-seed]") && state.seed) { save(clone(state.seed.drivers), "Back to the starting file"); return; }
+    var rs = t.closest("[data-restore]");
+    if (rs) {
+      var hit = history.filter(function (h) { return h.obj && h.obj.id === rs.getAttribute("data-restore"); })[0];
+      if (hit) save(driversFrom(hit.obj.drivers ? yearsFromPacked(hit.obj.drivers) : hit.obj.years), "Restore " + (hit.obj.label || "snapshot"));
+      return;
+    }
+    if (t.closest("[data-bulk]")) { applyBulk(); return; }
+    var cell = t.closest("[data-edit]");
+    if (!cell) return;
+    var row = ROWS.filter(function (r) { return r.id === cell.getAttribute("data-edit"); })[0];
+    var fy = Number(cell.getAttribute("data-fy"));
+    if (row && row.flag) { toggleExit(fy); return; }
+    editing = {fy:fy, row:row.id}; render();
+  });
+  function yearsFromPacked(packed) {
+    return YEARS.map(function (fy) {
+      var y = {fy:fy}; KEYS.forEach(function (k) { y[k] = packed[k] ? packed[k][String(fy)] : null; if (k === "capex") y.capex = y.capex; }); return y;
+    });
+  }
+  function toggleExit(fy) {
+    var d = clone(state.drivers);
+    YEARS.forEach(function (y) { d.is_exit[y] = y === fy ? 1 : 0; });
+    if (d.exit_mult[fy] == null) {
+      var prev = null; YEARS.forEach(function (y) { if (d.exit_mult[y] != null) prev = d.exit_mult[y]; });
+      if (prev != null) d.exit_mult[fy] = prev;
+    }
+    save(d, "Exit year · FY" + fy);
+  }
+  function applyBulk() {
+    var row = ROWS.filter(function (r) { return r.id === bulk.field; })[0];
+    var n = parseRaw(row, bulk.value);
+    if (!row || n == null) { note("That value is not a number"); return; }
+    var d = clone(state.drivers);
+    YEARS.forEach(function (fy) { if (fy >= Number(bulk.from) && fy <= Number(bulk.to)) d[row.id][fy] = n; });
+    save(d, "Apply to many · " + row.label + " · FY" + bulk.from + "–FY" + bulk.to);
+  }
+  app.addEventListener("change", function (ev) {
+    if (!bulk) return;
+    var b = ev.target.getAttribute && ev.target.getAttribute("data-b");
+    if (!b) return;
+    bulk[b] = ev.target.value;
+  });
+  app.addEventListener("keydown", function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    if (ev.key === "Enter") ev.target.blur();
+    if (ev.key === "Escape") { ignoreBlur = true; editing = null; render(); setTimeout(function () { ignoreBlur = false; }, 0); }
+  });
+  app.addEventListener("focusout", function (ev) {
+    if (ignoreBlur) { ignoreBlur = false; return; }
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    var rowId = ev.target.getAttribute("data-row");
+    var fy = Number(ev.target.getAttribute("data-fy"));
+    var row = ROWS.filter(function (r) { return r.id === rowId; })[0];
+    var n = parseRaw(row, ev.target.value);
+    editing = null;
+    var prev = get(state.drivers[rowId], fy);
+    if ((n == null && prev == null) || (n != null && prev != null && Math.abs(n - prev) < 1e-9)) { render(); return; }
+    if (n == null) delete state.drivers[rowId][fy]; else state.drivers[rowId][fy] = n;
+    state.dirty = true;
+    saveNote = "Unsaved · " + row.label + " · FY" + fy + " · Save snapshot writes the whole grid";
+    render();
+  });
+  app.addEventListener("paste", function (ev) {
+    if (!ev.target.classList || !ev.target.classList.contains("cell")) return;
+    var text = (ev.clipboardData || window.clipboardData).getData("text");
+    if (!text || (text.indexOf("\t") < 0 && text.indexOf("\n") < 0)) return;
+    ev.preventDefault();
+    var lines = text.replace(/\r/g, "").replace(/\n+$/, "").split("\n").map(function (l) { return l.split("\t"); });
+    var r0 = ROWS.map(function (r) { return r.id; }).indexOf(ev.target.getAttribute("data-row"));
+    var m0 = YEARS.indexOf(Number(ev.target.getAttribute("data-fy")));
+    var d = clone(state.drivers), changed = false;
+    lines.forEach(function (cells, i) {
+      var row = ROWS[r0 + i]; if (!row || !row.input || row.flag) return;
+      cells.forEach(function (raw, j) {
+        var fy = YEARS[m0 + j]; if (!fy || String(raw).trim() === "") return;
+        var n = parseRaw(row, raw); if (n == null) return;
+        d[row.id][fy] = n; changed = true;
+      });
+    });
+    ignoreBlur = true; editing = null; setTimeout(function () { ignoreBlur = false; }, 0);
+    if (!changed) { render(); return; }
+    save(d, "Paste " + lines.length + "×" + Math.max.apply(null, lines.map(function (l) { return l.length; })) + " block");
+  });
+
+  function col(data, key) {
+    var id = refId(bindings[key]);
+    if (id && data && Object.prototype.hasOwnProperty.call(data, id)) return data[id];
+    return null;
+  }
+  function unwrap(dd) {
+    if (dd && dd.data && typeof dd.data === "object" && !Array.isArray(dd.data) && ("offset" in dd || "isComplete" in dd)) return dd.data;
+    return dd;
+  }
+  function onGrid(raw) {
+    var data = unwrap(raw); if (!data) return;
+    var jsons = col(data, "g_json"); if (!jsons || !jsons.length) return;
+    var companies = col(data, "g_company") || [];
+    var scenarios = col(data, "g_scenario") || [];
+    var pick = 0;
+    for (var i = 0; i < jsons.length; i++) {
+      if ((!companies[i] || companies[i] === wantedCompany()) && (!scenarios[i] || scenarios[i] === wantedScenario())) { pick = i; break; }
+    }
+    try { applyGrid(JSON.parse(jsons[pick])); } catch (e) { saveNote = "The grid payload could not be read"; }
+    if (!editing) render();
+  }
+  function onLog(raw) {
+    var data = unwrap(raw); if (!data) return;
+    var payloads = col(data, "l_payload") || [];
+    var ats = col(data, "l_at") || [];
+    var bys = col(data, "l_by") || [];
+    history = [];
+    for (var i = 0; i < payloads.length; i++) {
+      var obj = null; try { obj = JSON.parse(payloads[i]); } catch (e) {}
+      history.push({payload: payloads[i], obj: obj, at: ats[i], by: bys[i]});
+    }
+    history.sort(function (a, b) { return String(b.at || "") > String(a.at || "") ? 1 : -1; });
+    if (!editing && panel === "history") render();
+  }
+  function wantedCompany() { return readVar("company"); }
+  function wantedScenario() { return readVar("scenario"); }
+  function readVar(key) {
+    try { var id = refId(bindings[key]); if (client && client.getVariable && id) { var v = client.getVariable(id); if (v) return String(v); } } catch (e) {}
+    return "";
+  }
+
+  if (client) {
+    try {
+      client.config.configureEditorPanel([
+        {name:"company", type:"variable", label:"Company on screen", allowedTypes:["text"]},
+        {name:"quarter", type:"variable", label:"Review quarter", allowedTypes:["text"]},
+        {name:"scenario", type:"variable", label:"Scenario", allowedTypes:["text"]},
+        {name:"persona", type:"variable", label:"Acting as", allowedTypes:["text"]},
+        {name:"payload", type:"variable", label:"Projection payload", allowedTypes:["text"]},
+        {name:"onSave", type:"action-trigger", label:"Save projection snapshot"},
+        {name:"grid", type:"element"},
+        {name:"log", type:"element"},
+        {name:"g_company", type:"column", source:"grid", label:"Grid company"},
+        {name:"g_scenario", type:"column", source:"grid", label:"Grid scenario"},
+        {name:"g_json", type:"column", source:"grid", label:"Grid JSON"},
+        {name:"l_payload", type:"column", source:"log", label:"Log payload"},
+        {name:"l_at", type:"column", source:"log", label:"Log saved at"},
+        {name:"l_by", type:"column", source:"log", label:"Log edited by"}
+      ]);
+    } catch (e) {}
+    client.config.subscribe(function (cfg) {
+      bindings = cfg || {};
+      if (!client.elements || !client.elements.subscribeToElementData) return;
+      [[refId(bindings.grid), onGrid], [refId(bindings.log), onLog]].forEach(function (pair) {
+        if (!pair[0] || wired[pair[0]]) return;
+        wired[pair[0]] = true;
+        try { client.elements.subscribeToElementData(pair[0], pair[1]); } catch (e) {}
+      });
+      try {
+        var pid = refId(bindings.payload);
+        if (pid && client.subscribeToWorkbookVariable && !wired["var:" + pid]) {
+          wired["var:" + pid] = true;
+          client.subscribeToWorkbookVariable(pid, function (val) {
+            if (!val || String(val).indexOf('"origin":"agent"') < 0) return;
+            try {
+              var obj = JSON.parse(val);
+              if (!obj.drivers || obj.id === pendingId) return;
+              var d = driversFrom(yearsFromPacked(obj.drivers));
+              state.drivers = d; state.dirty = true; saveNote = "Scenario Builder drafted this case. Review it, then Save snapshot.";
+              render();
+            } catch (e) {}
+          });
+        }
+      } catch (e) {}
+    });
+  } else {
+    /* Local preview of the Alpha base fixture, so the grid can be opened outside Sigma. */
+    applyGrid({
+      measurement_date:"2026-06-30", quarter:"Q2 2026", investment_id:"CPP-IV-APC", company:"Alpha Precision Components",
+      scenario:"Base case", ltm_revenue:203.497, ltm_ebitda:40, net_debt:140, ownership:0.6, invested:80, realized:10,
+      hist_pairs:"2022-01-15|-80.0,2024-06-30|10.0", gross_irr_today:0.184278604644, gross_moic_today:2.075,
+      proceeds:210, moic:2.75, irr:0.176950958419, status:"OK", first_breach_fy:null, source:"Seed", change_set:null,
+      exit_fy:2028, exit_date:"2028-06-30",
+      years:[
+        {fy:2026, year_ending:"2026-06-30", revenue:203.497, ebitda:40, fcf:null, net_debt:140, leverage:3.5, covenant:5, is_breach:0, is_exit:0, margin:40/203.497},
+        {fy:2027, year_ending:"2027-06-30", rev_g:0.05, margin:40/203.497, capex:0.03, sweep:0.3, div:0, revenue:213.672, ebitda:42, is_exit:0, covenant:5},
+        {fy:2028, year_ending:"2028-06-30", rev_g:0.05, margin:40/203.497, capex:0.03, sweep:0.3, div:0, ebitda_override:50, is_exit:1, exit_mult:9, nd_override:100, ebitda:50, revenue:224.355, exit_ev:450, exit_equity:350, proceeds:210, covenant:5, leverage:2},
+        {fy:2029, year_ending:"2029-06-30", rev_g:0.05, margin:40/203.497, capex:0.03, sweep:0.3, div:0, is_exit:0, covenant:5},
+        {fy:2030, year_ending:"2030-06-30", rev_g:0.05, margin:40/203.497, capex:0.03, sweep:0.3, div:0, is_exit:0, covenant:5}
+      ]
+    });
+    state.dirty = false;
+    saveNote = "Preview of the Alpha base fixture. Inside Sigma this grid reads Databricks.";
+    render();
+  }
+})();
+</script>
+</body>
+</html>
