@@ -94,7 +94,7 @@
   function get(map, fy) { if (!map) return null; var v = map[fy]; return v == null || v === "" ? null : num(v); }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
-  /* Same recurrence as sql/06_projection.sql. IRR here is a preview. The workbook number is pe_xirr. */
+  /* Same recurrence as sql/06_projection.sql for the path. The rate is pe_xirr in the warehouse, not this file. */
   function project(base, drivers) {
     var revYear = Number(String(base.measurement_date).slice(0, 4));
     var prevRev = num(base.ltm_revenue), prevNd = num(base.net_debt);
@@ -135,34 +135,11 @@
     var exit = years.filter(function (y) { return y.fy === exitFy; })[0] || null;
     var proceeds = exit ? exit.proceeds : null;
     var moic = proceeds != null && num(base.invested) ? (num(base.realized) + proceeds) / num(base.invested) : null;
-    var irr = null, status = "Not computable: no exit year";
-    if (!exit) status = "Not computable: no exit year";
-    else if (proceeds == null) status = "Not computable: LTM EBITDA is not known at this review cutoff";
-    else if (exit.exit_equity <= 0) status = "Unsupported: exit equity is zero or negative";
-    else { irr = xirr(flows(base, years, exit)); status = irr == null ? "NO_ROOT" : "OK"; }
+    var status = exit ? "Preview · rate is last saved pe_xirr" : "Not computable: no exit year";
+    if (exit && proceeds == null) status = "Not computable: LTM EBITDA is not known at this review cutoff";
+    else if (exit && exit.exit_equity <= 0) status = "Unsupported: exit equity is zero or negative";
     var breach = years.filter(function (y) { return y.is_breach && y.fy > revYear; })[0];
-    return {years:years, summary:{exit_fy:exitFy, proceeds:proceeds, moic:moic, irr:irr, status:status, first_breach_fy: breach ? breach.fy : null, source:"Preview"}};
-  }
-
-  function flows(base, years, exit) {
-    var pairs = String(base.hist_pairs || "").split(",").filter(Boolean).map(parsePair).filter(Boolean);
-    years.forEach(function (y) {
-      if (y.fy > Number(String(base.measurement_date).slice(0, 4)) && y.fy <= exit.fy && y.div && y.year_ending)
-        pairs.push([y.year_ending.slice(0, 10), y.div * num(base.ownership)]);
-    });
-    var when = exit.year_ending ? exit.year_ending.slice(0, 10) : (exit.fy + "-06-30");
-    pairs.push([when, exit.proceeds]);
-    return pairs;
-  }
-  function parsePair(s) { var p = String(s).split("|"); var d = p[0], a = Number(p[1]); return isFinite(a) ? [d.slice(0, 10), a] : null; }
-  function xirr(pairs) {
-    if (!pairs.length) return null;
-    var d0 = pairs.map(function (p) { return p[0]; }).sort()[0];
-    function npv(r) { return pairs.reduce(function (s, p) { return s + p[1] / Math.pow(1 + r, (Date.parse(p[0]) - Date.parse(d0)) / 86400000 / 365); }, 0); }
-    var lo = -0.99, hi = 10;
-    if (npv(lo) * npv(hi) > 0) return null;
-    for (var i = 0; i < 80; i++) { var m = (lo + hi) / 2; if (npv(lo) * npv(m) <= 0) hi = m; else lo = m; }
-    return (lo + hi) / 2;
+    return {years:years, summary:{exit_fy:exitFy, proceeds:proceeds, moic:moic, irr:null, status:status, first_breach_fy: breach ? breach.fy : null, source:"Preview"}};
   }
 
   function driversFrom(years) {
@@ -201,9 +178,12 @@
     return project(state.base, state.drivers).years;
   }
   function shownSummary() {
-    if (!state.dirty && state.summary) return state.summary;
     if (!state.base) return {};
-    return project(state.base, state.drivers).summary;
+    var live = project(state.base, state.drivers).summary;
+    if (!state.dirty && state.summary) return state.summary;
+    live.irr = state.summary ? state.summary.irr : null;
+    live.status = "Last saved · pe_xirr";
+    return live;
   }
 
   function fmtPct(n) { return n == null ? "" : (n * 100).toFixed(1) + "%"; }
@@ -353,12 +333,13 @@
     h += '<button class="tool' + (panel === "history" ? " on" : "") + '" data-panel="history">History &amp; undo</button></div>';
     h += '<div class="meta"><b>Projection</b><div id="status">' + html(saveNote) + '</div></div></div>';
     h += '<div class="kpis">';
-    h += kpi("Fund proceeds", sum.proceeds == null ? "—" : "$" + fmtMoney(sum.proceeds) + "m", state.dirty ? "preview" : "gross, from pe_xirr");
-    h += kpi("Gross MOIC", sum.moic == null ? "—" : Number(sum.moic).toFixed(3) + "x", "realized + proceeds");
-    h += kpi("Gross IRR", fmtIrr(sum.irr), state.dirty ? "preview · ACT/365" : (sum.status || "gross"));
+    h += kpi("Fund proceeds", sum.proceeds == null ? "—" : "$" + fmtMoney(sum.proceeds) + "m", state.dirty ? "preview" : "gross");
+    h += kpi("Gross MOIC", sum.moic == null ? "—" : Number(sum.moic).toFixed(3) + "x", state.dirty ? "preview" : "realized + proceeds");
+    h += kpi("Gross IRR", fmtIrr(state.dirty ? (state.summary && state.summary.irr) : sum.irr), "last saved · pe_xirr");
     h += kpi("IRR today", fmtIrr(state.base.gross_irr_today), "reported mark");
     h += kpi("First breach", sum.first_breach_fy ? ("FY" + sum.first_breach_fy) : "None in the grid", "review case on the forecast", !!sum.first_breach_fy);
     h += "</div>";
+    h += '<div class="note">Review year locked to LTM. Later revenue compounds. EBITDA is the override, or revenue times margin. Free cash flow subtracts capex. Net debt rolls forward. Exit equity is EBITDA times the multiple, minus net debt. The rate is pe_xirr on the dated flows plus the exit. This preview does not recompute it. Save writes one row.</div>';
     h += '<div class="note"><span class="dot">Blue</span> cells are inputs. Type a cell, paste a block from Excel, or apply one value across years. Each save appends one snapshot of the whole grid. Returns are gross, before fees and carry. The forecast is a model, not a mark.</div>';
     h += '<div class="body"><div class="sheet"><table><thead><tr><th class="lab">FY' + revYear + " is the review</th>";
     YEARS.forEach(function (fy) {
@@ -527,9 +508,35 @@
     var jsons = col(data, "g_json"); if (!jsons || !jsons.length) return;
     var companies = col(data, "g_company") || [];
     var scenarios = col(data, "g_scenario") || [];
-    var pick = 0;
+    var wantCo = wantedCompany(), wantSc = wantedScenario();
+    var pick = -1, starter = -1;
     for (var i = 0; i < jsons.length; i++) {
-      if ((!companies[i] || companies[i] === wantedCompany()) && (!scenarios[i] || scenarios[i] === wantedScenario())) { pick = i; break; }
+      if (companies[i] && wantCo && companies[i] !== wantCo) continue;
+      if (starter < 0 || scenarios[i] === "Base case") starter = i;
+      if (!wantSc || !scenarios[i] || scenarios[i] === wantSc) { pick = i; break; }
+    }
+    if (pick < 0 && starter >= 0 && wantSc && wantSc !== "New scenario") {
+      try {
+        var obj = JSON.parse(jsons[starter]);
+        obj.scenario = wantSc;
+        obj.source = "Starter";
+        obj.irr = null;
+        obj.moic = null;
+        obj.proceeds = null;
+        obj.status = "No saved rate yet. pe_xirr runs in the warehouse.";
+        obj.change_set = null;
+        applyGrid(obj);
+        state.dirty = true;
+        saveNote = "Starting from the base case. Save writes one row. The rate is pe_xirr, not this preview.";
+      } catch (e) { saveNote = "The grid payload could not be read"; }
+      if (!editing) render();
+      return;
+    }
+    if (pick < 0) {
+      state.base = null;
+      saveNote = wantSc === "New scenario" ? "Type a name, then Add scenario. Base case, Downside and Forecast stay the starters." : "The starting file for this scenario is not on the page.";
+      render();
+      return;
     }
     try { applyGrid(JSON.parse(jsons[pick])); } catch (e) { saveNote = "The grid payload could not be read"; }
     if (!editing) render();
