@@ -104,7 +104,8 @@
     || (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client);
 
   /* Months, contracts, and every starting input come from the workbook's Forecast Seed.
-     This file is public. It must not contain a customer's names or numbers. */
+     Prices, revenue, gross profit, and margin come from the Forecast calculations table.
+     This file is public. It must not contain a customer's names, numbers, or formulas. */
   var MONTHS = [];
   var ORDER = [];
   var SEED = {};
@@ -127,6 +128,7 @@
   }
   var editing = null;
   var state = null;
+  var results = {};
   var committed = null;
   var saveNote = "";
   var saveTimer = null;
@@ -164,32 +166,6 @@
   var PAIRED = { slurm: "rslurm", inf: "rinf", orch: "rorch" };
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
-
-  function calc(m) {
-    var od = m.od / 100, res = m.res / 100;
-    var committed = m.nodes * m.gpus * m.hours;
-    var odHours = committed * od;
-    var resHours = committed * res;
-    var utilized = odHours + resHours;
-    var odPrice = m.cost * (1 + m.premium / 100);
-    var odTotal = odPrice * (1 + (m.slurm + m.inf + m.orch) / 100);
-    var showRes = m.rdisc > 0 || res > 0;
-    var resPrice = showRes ? odPrice * (1 - m.rdisc / 100) : 0;
-    var resTotal = resPrice * (1 + (m.rslurm + m.rinf + m.rorch) / 100);
-    var odRev = odHours * odTotal;
-    var resRev = resHours * resTotal;
-    var rev = odRev + resRev;
-    return {
-      idle: Math.max(0, 100 - m.od - m.res),
-      committed: committed, utilized: utilized,
-      odPrice: odPrice, odTotal: odTotal, odRev: odRev,
-      resPrice: resPrice, resTotal: resTotal, resRev: resRev, showRes: showRes,
-      wprice: utilized > 0.5 ? rev / utilized : odTotal,
-      gp: rev - m.cost * committed,
-      gpu: rev - m.cost * utilized,
-      margin: Math.abs(rev) >= 1 ? (rev - m.cost * committed) / rev : null
-    };
-  }
 
   function comma(n, d) {
     var s = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -246,15 +222,19 @@
     { id: "gpu", label: "Gross Profit (utilized)", out: "acct" }
   ];
 
-  function cellValue(m, c, row) {
+  var RESULT_IDS = ["committed", "utilized", "odPrice", "odTotal", "odRev", "resPrice", "resTotal", "resRev", "wprice", "gp", "margin", "gpu"];
+
+  function cellValue(m, row, ym) {
     if (row.input) {
-      if (row.id === "idle") return c.idle;
+      if (row.id === "idle") return Math.max(0, 100 - m.od - m.res);
       return m[row.id];
     }
-    if (row.id === "resPrice" && !c.showRes) return 0;
-    if (row.id === "resTotal" && !c.showRes) return 0;
-    if (row.id === "resRev" && Math.abs(c.resRev) < 0.5) return null;
-    return c[row.id];
+    var key = active + "|" + ym;
+    if (isDirty(active, ym) || pending[key]) return null;
+    var rowr = results[active] && results[active][ym];
+    if (!rowr || rowr[row.id] == null || !isFinite(rowr[row.id])) return null;
+    if (row.id === "resRev" && Math.abs(rowr[row.id]) < 0.5) return null;
+    return rowr[row.id];
   }
 
   function formatCell(row, v) {
@@ -311,15 +291,18 @@
     m[row.id] = n;
   }
 
-  function forecastTotals(contract) {
-    var rev = 0, gp = 0;
+  function forecastTotals(cid) {
+    var rev = 0, gp = 0, n = 0, dirty = false;
     MONTHS.forEach(function (ym) {
       if (!isForecast(ym)) return;
-      var c = calc(contract.months[ym]);
-      rev += c.odRev + c.resRev;
-      gp += c.gp;
+      if (isDirty(cid, ym)) { dirty = true; return; }
+      var row = results[cid] && results[cid][ym];
+      if (!row || row.gp == null || !isFinite(row.gp)) return;
+      rev += (row.odRev || 0) + (row.resRev || 0);
+      gp += row.gp;
+      n++;
     });
-    return { rev: rev, gp: gp, margin: Math.abs(rev) >= 1 ? gp / rev : null };
+    return { rev: n ? rev : null, gp: n ? gp : null, margin: n && Math.abs(rev) >= 1 ? gp / rev : null, dirty: dirty, n: n };
   }
 
   function seedOf(cid, ym) { return SEED[cid] && SEED[cid].months[ym] ? SEED[cid].months[ym] : null; }
@@ -662,7 +645,7 @@
     if (meta) meta.textContent = saveNote;
   }
 
-  /* ---------- reading the winning row per month (Forecast Read) ---------- */
+  /* ---------- reading the winning row per month (Forecast calculations) ---------- */
 
   function closeEnough(a, b) {
     var x = Number(a), y = Number(b);
@@ -742,6 +725,29 @@
     }
   }
 
+  function storeResults(data, contracts, months) {
+    var cols = {};
+    RESULT_IDS.forEach(function (k) {
+      var id = refId(bindings["r_" + k]);
+      cols[k] = id && Object.prototype.hasOwnProperty.call(data, id) ? data[id] : null;
+    });
+    var changed = false;
+    for (var i = 0; i < contracts.length; i++) {
+      var cid = String(contracts[i]), ym = String(months[i]);
+      if (!results[cid]) results[cid] = {};
+      var prev = results[cid][ym] || {};
+      var row = {};
+      RESULT_IDS.forEach(function (k) {
+        var n = cols[k] ? Number(cols[k][i]) : NaN;
+        row[k] = isFinite(n) ? n : null;
+        var same = prev[k] == null && row[k] == null;
+        if (!same && !closeEnough(prev[k] == null ? NaN : prev[k], row[k] == null ? NaN : row[k])) changed = true;
+      });
+      results[cid][ym] = row;
+    }
+    return changed;
+  }
+
   function applySaved(raw) {
     if (!state) { savedHold = raw; return; }
     var data = unwrapData(raw);
@@ -750,6 +756,7 @@
     var contracts = column(data, "contract");
     var months = column(data, "month");
     if (!contracts || !contracts.length || !months) return;
+    var calcChanged = storeResults(data, contracts, months);
     var dirty = false;
     for (var i = 0; i < contracts.length; i++) {
       var cid = contracts[i], ym = months[i];
@@ -781,7 +788,7 @@
         });
       }
     }
-    if (dirty && !editing && !document.querySelector("input.cell")) render();
+    if ((dirty || calcChanged) && !editing && !document.querySelector("input.cell")) render();
   }
 
   /* ---------- render ---------- */
@@ -794,7 +801,7 @@
     }
     var keep = editing;
     var contract = state[active];
-    var tot = forecastTotals(contract);
+    var tot = forecastTotals(active);
     var authors = {};
     MONTHS.forEach(function (ym) { authors[ym] = fieldAuthors(active, ym); });
     var h = '<div class="top"><div class="tabs">';
@@ -810,11 +817,11 @@
       + '<button class="tool' + (panel === "history" ? " on" : "") + '" data-panel="history">History &amp; undo</button>'
       + '</div><div class="meta"><div><b>excel_forecast</b></div><div id="status">' + html(saveNote) + '</div><button class="link" id="reset">Reset this tab to the starting file</button></div></div>';
     h += '<div class="kpis">'
-      + kpi("Forecast revenue", tot.rev, "Oct-26 → Jun-27")
-      + kpi("Gross profit", tot.gp, "all-in, forecast months")
+      + kpi("Forecast revenue", tot.rev, tot.dirty ? "saved months only" : "from Forecast calculations")
+      + kpi("Gross profit", tot.gp, tot.dirty ? "unsaved months left out" : "formula on the table below")
       + kpi("Margin", tot.margin == null ? null : tot.margin * 100, "gross profit ÷ revenue", true)
       + "</div>";
-    h += '<div class="note"><span class="dot">Blue</span> cells are inputs. Type, paste a block from Excel, or Apply to many. Nothing is written until <b>Save snapshot</b>. That writes one Redshift row per changed month, with who and when, as one change set you can undo. A <span class="mk"></span> corner marks a value already saved and different from the starting file. An amber cell is typed but not saved yet.</div>';
+    h += '<div class="note"><span class="dot">Blue</span> cells are inputs. Calculated rows stay blank until <b>Save snapshot</b>, then they fill from the <b>Forecast calculations</b> table. Change a formula there, in the formula bar. This grid does not contain the math. A <span class="mk"></span> corner marks a saved input that differs from the starting file. An amber cell is typed but not saved yet.</div>';
     h += '<div class="body"><div class="sheet"><table><thead><tr><th class="lab"></th>';
     MONTHS.forEach(function (ym) {
       var fc = isForecast(ym);
@@ -832,22 +839,22 @@
       h += "<tr><td class=\"lab\">" + row.label + "</td>";
       MONTHS.forEach(function (ym) {
         var m = contract.months[ym];
-        var c = calc(m);
-        var v = cellValue(m, c, row);
+        var v = cellValue(m, row, ym);
         var key = active + "|" + ym;
         var seedM = seedOf(active, ym);
         var who = row.input && row.id !== "idle" && seedM && !closeEnough(m[row.id], seedM[row.id]) ? authors[ym][row.id] : null;
         var cls = "num" + (row.input ? " in" : "") + (row.strong ? " strong" : "") + (ym === splitMonth() ? " split" : "")
           + (who ? " edited" : "") + (row.input && isDirty(active, ym) && !pending[key] ? " draft" : "")
           + (row.input && pending[key] && !failed[key] ? " pend" : "") + (row.input && failed[key] ? " fail" : "");
-        var tip = who ? ' title="' + html(row.label + " · changed by " + who.by + " · " + who.at + " ET · v" + who.ver + " · " + who.chg) + '"' : "";
+        var calcTip = !row.input && v == null ? (isDirty(active, ym) || pending[key] ? "Unsaved. Save snapshot to fill this from the Forecast calculations formula." : "This number is the Forecast calculations formula for this month.") : "";
+        var tip = who ? ' title="' + html(row.label + " · changed by " + who.by + " · " + who.at + " ET · v" + who.ver + " · " + who.chg) + '"' : (calcTip ? ' title="' + html(calcTip) + '"' : "");
         var shown = formatCell(row, v);
         if (keep && keep.contract === active && keep.month === ym && keep.row === row.id) {
           h += '<td class="' + cls + '"><input class="cell" data-row="' + row.id + '" data-month="' + ym + '" value="' + esc(shown) + '"/></td>';
         } else if (row.input) {
           h += '<td class="' + cls + '" data-edit="' + row.id + '" data-month="' + ym + '"' + tip + ">" + shown + "</td>";
         } else {
-          h += '<td class="' + cls + '">' + shown + "</td>";
+          h += '<td class="' + cls + '"' + tip + ">" + shown + "</td>";
         }
       });
       h += "</tr>";
@@ -957,13 +964,8 @@
     var plan = bulkRows();
     if (plan.bad) h += '<div class="warn">That value is not a number.</div>';
     else if (plan.rows.length || plan.same) {
-      var dRev = 0;
-      plan.rows.forEach(function (r) {
-        var a = calc(r.after || r.vals), b = calc(r.before);
-        dRev += (a.odRev + a.resRev) - (b.odRev + b.resRev);
-      });
-      h += '<div class="preview"><b>' + plan.rows.length + "</b> contract-month" + (plan.rows.length === 1 ? "" : "s") + " change" + (plan.same ? " · " + plan.same + " already at that value" : "")
-        + '<br/>Forecast revenue ' + (dRev >= 0 ? "+" : "−") + "$" + comma(Math.abs(dRev), 0).replace(/[()]/g, "") + "</div>";
+      h += '<div class="preview"><b>' + plan.rows.length + "</b> contract-month" + (plan.rows.length === 1 ? "" : "s") + " will change" + (plan.same ? " · " + plan.same + " already at that value" : "")
+        + "<br/>Revenue and margin update from the workbook formulas after Save snapshot.</div>";
     }
     h += '<button class="act" data-bulk-go="1"' + (plan.rows.length ? "" : " disabled") + ">Apply to the grid</button>";
     return h + "</div>";
@@ -1215,6 +1217,9 @@
       ["contract", "month"].concat(INPUT_KEYS).forEach(function (k) {
         cfgPanel.push({ name: "c_" + k, type: "variable", label: "Write " + k, allowedTypes: ["text"] });
         cfgPanel.push({ name: "d_" + k, type: "column", source: "saved", label: "Read " + k });
+      });
+      RESULT_IDS.forEach(function (k) {
+        cfgPanel.push({ name: "r_" + k, type: "column", source: "saved", label: "Formula " + k });
       });
       ["row", "contract", "month", "ver", "cur", "by", "attxt", "chg", "batch", "what"].concat(INPUT_KEYS).forEach(function (k) {
         cfgPanel.push({ name: "h_" + k, type: "column", source: "history", label: "History " + k });
